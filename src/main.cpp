@@ -136,20 +136,6 @@ struct AudioParams {
     float durationPerColumn = 0.01f;
 };
 
-// --- Functions ---
-
-/**
- * @brief Normalizes the audio buffer to the range [-1.0, 1.0].
- * @param audio The audio buffer to normalize.
- */
-inline void normalizeAudio(std::vector<float> &audio) {
-    float maxAmp = 0.0f;
-    for (const float v: audio) maxAmp = std::max(maxAmp, std::abs(v));
-    if (maxAmp > 0.0f) {
-        for (float &v: audio) v /= maxAmp;
-    }
-}
-
 // --- Main ---
 int main(int argc, char *argv[]) {
     cxxopts::Options options("ImageToSound", "Convert image to sound");
@@ -250,7 +236,11 @@ int main(int argc, char *argv[]) {
         s -= mean;
 
     // Normalisieren
-    normalizeAudio(finalAudio);
+    float maxAmp = 0.0f;
+    for (const float v: finalAudio) maxAmp = std::max(maxAmp, std::abs(v));
+    if (maxAmp > 0.0f) {
+        for (float &v: finalAudio) v /= maxAmp;
+    }
 
     // --- WAV speichern ---
     AudioFile<float> wav;
