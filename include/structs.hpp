@@ -11,8 +11,15 @@
 #include <fstream>
 
 /**
- * @brief Represents a single image frame with pixel data.
+ * @brief Normalisierungs typen für Audio
+ * @author Lupo
  */
+enum class NormType { PEAK, RMS };
+
+/**
+ * @brief Represents a single image frame with pixel data.
+ * @author Lupo
+*/
 struct ImageFrame {
     int width{};
     int height{};
@@ -22,6 +29,7 @@ struct ImageFrame {
 
 /**
  * @brief Simple image structure to hold frames.
+ * @author Lupo
  */
 struct Image {
     int channels = 1; // Graustufen
@@ -125,11 +133,20 @@ private:
 
 /**
  * @brief Audio parameters for sound generation.
+ * @author Lupo
  */
 struct AudioParams {
+    enum class ScaleType {
+        LINEAR,
+        LOGARITHMIC,
+        MEL
+    };
+
     int samplerate = 44100;
     float minFreq = 400.0f;
     float maxFreq = 14000.0f;
     float durationPerColumn = 0.01f;
+    float gamma{1.0f};
+    ScaleType scaleType = ScaleType::LOGARITHMIC;
 };
 #endif //IMG_TO_SPECTROGRAM_STRUCTS_H
