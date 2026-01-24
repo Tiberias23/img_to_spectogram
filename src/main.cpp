@@ -258,20 +258,28 @@ int main(int argc, char* argv[]) {
         totalSamples += frame.width * samplesPerColumn;
     }
 
-    vector<float> finalAudio; // Audio für alle Frames zusammen
-    finalAudio.reserve(totalSamples);
-    for (auto& frame : img.frames) {
-        vector<float> audio(frame.width * samplesPerColumn, 0.0f);
+    vector<float> finalAudio(totalSamples, 0.0f);
+    int offset = 0;
 
-        // Frequenzen neu generieren pro Frame
-        FrequencyTable table;
-        table.generate(frame.height, samplesPerColumn, params.minFreq, params.maxFreq, params.samplerate);
+    for (const ImageFrame& frame : img.frames) {
+        // Frequenzen berechnen (Height -> Frequenz pro Zeile)
+        vector<float> frequencies(frame.height);
+        for (int y = 0; y < frame.height; ++y)
+            frequencies[y] = params.minFreq * std::pow(params.maxFreq / params.minFreq,
+                                    static_cast<float>(frame.height - 1 - y) / static_cast<float>(frame.height - 1));
 
-        // Audio erzeugen
-        generateAudio(frame, table, audio, samplesPerColumn);
-
-        // An finalAudio anhängen
-        finalAudio.insert(finalAudio.end(), audio.begin(), audio.end());
+        // Audio direkt in finalAudio schreiben
+        for (int x = 0; x < frame.width; ++x) {
+            for (int i = 0; i < samplesPerColumn; ++i) {
+                float sample = 0.0f;
+                for (int y = 0; y < frame.height; ++y) {
+                    float t = static_cast<float>(i) / static_cast<float>(params.samplerate);
+                    sample += frame.pixels[y * frame.width + x] * static_cast<float>(std::sin(2.0f * M_PI * frequencies[y] * t));
+                }
+                finalAudio[offset + x * samplesPerColumn + i] = sample;
+            }
+        }
+        offset += frame.width * samplesPerColumn;
     }
 
     // Nach dem Anhängen aller Frames
