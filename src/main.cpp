@@ -245,7 +245,7 @@ int main(int argc, char *argv[]) {
     }
 
     // --- WAV speichern ---
-    AudioFile<double> wav;
+    AudioFile<float> wav;
     wav.setNumChannels(1);
     wav.setSampleRate(params.samplerate);
     wav.setNumSamplesPerChannel(static_cast<int>(finalAudio.size()));
