@@ -100,6 +100,30 @@ inline float melToHz(const float m) {
 }
 
 /**
+ * @brief Wandelt Hz in Bark-Frequenz um
+ * @param f die Frequenz in Hz
+ * @return die Bark-Frequenz
+ * @author Lupo
+ */
+inline float hzToBark(const float f) {
+    return 13.0f * std::atan(0.00076f * f)
+         + 3.5f * std::atan(std::pow(f / 7500.0f, 2.0f));
+}
+
+/**
+ * @brief Wandelt Bark-Frequenz in Hz um
+ * @param z die Bark-Frequenz
+ * @return die Frequenz in Hz
+ * @author Lupo
+ */
+inline float barkToHz(const float z) {
+    // numerische Inversion (Newton-Raphson wäre overkill)
+    // → wir benutzen eine gute Näherung
+    return 600.0f * std::sinh(z / 6.0f);
+}
+
+
+/**
  * @brief Berechnet die Frequenz für eine gegebene y-Position im Bild
  * @param y die y-Position (0 = unten, height-1 = oben)
  * @param height die Höhe des Bildes
@@ -128,6 +152,13 @@ float freqForY(const int y, const int height, const AudioParams& params) {
             const float melMax = hzToMel(params.maxFreq);
             const float mel = melMin + t * (melMax - melMin);
             return melToHz(mel);
+        }
+
+        case AudioParams::ScaleType::BARK: {
+            const float barkMin = hzToBark(params.minFreq);
+            const float barkMax = hzToBark(params.maxFreq);
+            const float bark = barkMin + t * (barkMax - barkMin);
+            return barkToHz(bark);
         }
     }
     return params.minFreq; // unreachable, aber Compiler happy
@@ -212,6 +243,8 @@ int main(int argc, char *argv[]) {
         params.scaleType = AudioParams::ScaleType::LOGARITHMIC;
     } else if (scaleStr == "mel") {
         params.scaleType = AudioParams::ScaleType::MEL;
+    } else if (scaleStr == "bark") {
+        params.scaleType = AudioParams::ScaleType::BARK;
     } else {
         throw std::runtime_error("Invalid scale type: " + scaleStr + " (use linear|log|mel)");
     }

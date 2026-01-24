@@ -139,7 +139,8 @@ struct AudioParams {
     enum class ScaleType {
         LINEAR,
         LOGARITHMIC,
-        MEL
+        MEL,
+        BARK
     };
 
     int samplerate = 44100;
