@@ -212,21 +212,24 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < colSamples; ++i) {
             hann[i] = 0.5f * static_cast<float>(1.0f - cos(2.0f * M_PI * i / (colSamples - 1)));
         }
-
+        vector<float> phaseInc(frame.height);
+        for (int y = 0; y < frame.height; ++y) {
+            phaseInc[y] = M_PI * 2.0f * frequencies[y] / params.samplerate;
+        }
         #pragma omp parallel for schedule(static) default(none) \
-            shared(finalAudio, frame, frequencies, hann, offset, colSamples,params)
+            shared(finalAudio, frame, frequencies, hann, offset, colSamples,params, phaseInc)
         for (int x = 0; x < frame.width; ++x) {
+            vector<float> phase(frame.height, 0.0f);
             for (int i = 0; i < colSamples; ++i) {
-                float globalT = static_cast<float>(offset + x * colSamples + i) / static_cast<float>(params.samplerate);
                 float sample = 0.0f;
                 for (int y = 0; y < frame.height; ++y) {
                     float centered = frame.pixels[y * frame.width + x] - 0.5f;
                     centered = centered * fabs(centered);
-                    sample += centered * sinf(static_cast<float>(2.0f * M_PI * frequencies[y] * globalT));
+                    sample += centered * sinf(phase[y]);
+                    phase[y] += phaseInc[y];
                 }
                 sample *= hann[i];
-                int indexInAudioFile = offset + x * colSamples + i;
-                finalAudio[indexInAudioFile] += sample;
+                finalAudio[offset + x * colSamples + i] += sample;
             }
         }
     }
