@@ -199,11 +199,13 @@ int main(int argc, char *argv[]) {
         auto &frame = img.frames[f];
         int offset = frameOffsets[f];
         vector<float> frequencies(frame.height);
-        for (int y = 0; y < frame.height; ++y)
+        vector<float> phaseInc(frame.height);
+        for (int y = 0; y < frame.height; ++y) {
             frequencies[y] = params.minFreq * pow(params.maxFreq / params.minFreq,
                                                   static_cast<float>(frame.height - 1 - y) / static_cast<float>(
                                                       frame.height - 1));
-
+            phaseInc[y] = M_PI * 2.0f * frequencies[y] / params.samplerate;
+        }
         // Jede Spalte bekommt mindestens 256 Samples für scharfes Spektrogramm
         int colSamples = max(256, samplesPerColumn);
 
@@ -212,20 +214,23 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < colSamples; ++i) {
             hann[i] = 0.5f * static_cast<float>(1.0f - cos(2.0f * M_PI * i / (colSamples - 1)));
         }
-        vector<float> phaseInc(frame.height);
-        for (int y = 0; y < frame.height; ++y) {
-            phaseInc[y] = M_PI * 2.0f * frequencies[y] / params.samplerate;
-        }
+
+        // Spalten parallel berechnen
         #pragma omp parallel for schedule(static) default(none) \
             shared(finalAudio, frame, frequencies, hann, offset, colSamples,params, phaseInc)
         for (int x = 0; x < frame.width; ++x) {
-            vector<float> phase(frame.height, 0.0f);
+            vector<float> phase(frame.height, 0.0f); // Phase pro Frequenz
+            vector<float> amp(frame.height); // Amplitude pro Frequenz
+            // Amplitude vorberechnen
+            for (int y = 0; y < frame.height; ++y) {
+                float c = frame.pixels[y * frame.width + x] - 0.5f;
+                amp[y] = c * fabs(c);
+            }
+            // Samples der Spalte berechnen
             for (int i = 0; i < colSamples; ++i) {
                 float sample = 0.0f;
                 for (int y = 0; y < frame.height; ++y) {
-                    float centered = frame.pixels[y * frame.width + x] - 0.5f;
-                    centered = centered * fabs(centered);
-                    sample += centered * sinf(phase[y]);
+                    sample += amp[y] * sinf(phase[y]);
                     phase[y] += phaseInc[y];
                 }
                 sample *= hann[i];
