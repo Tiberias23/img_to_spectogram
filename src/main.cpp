@@ -4,6 +4,7 @@
 #include <string>
 #include <algorithm>
 #include <fstream>
+#include <numeric>
 
 #include <AudioFile.h>
 #include <cxxopts.hpp>
@@ -49,7 +50,7 @@ private:
      * @return a vector with the frames
      * @author Lupo
      */
-    static std::vector<unsigned char> load_file(const std::string& path) {
+    static std::vector<unsigned char> load_file(const std::string &path) {
         std::ifstream file(path, std::ios::binary);
         if (!file.is_open()) {
             throw std::runtime_error("Failed to open file: " + path);
@@ -65,14 +66,14 @@ private:
      * @param path The file path of the GIF image.
      * @return True if the GIF was loaded successfully, false otherwise.
      */
-    bool loadGIF(const std::string& path) {
+    bool loadGIF(const std::string &path) {
         const auto data = load_file(path);
 
-        int* delays = nullptr;
+        int *delays = nullptr;
         int frames_count = 0;
         int width = 0, height = 0;
 
-        unsigned char* gif = stbi_load_gif_from_memory(
+        unsigned char *gif = stbi_load_gif_from_memory(
             data.data(), static_cast<int>(data.size()),
             &delays, &width, &height, &frames_count, nullptr, channels
         );
@@ -108,9 +109,9 @@ private:
      * @param path The file path of the image.
      * @return True if the image was loaded successfully, false otherwise.
      */
-    bool loadImage(const std::string& path) {
+    bool loadImage(const std::string &path) {
         int w, h, c;
-        unsigned char* data = stbi_load(path.c_str(), &w, &h, &c, channels);
+        unsigned char *data = stbi_load(path.c_str(), &w, &h, &c, channels);
         if (!data) return false;
         clog << "loaded image '" << path << "' (" << w << "x" << h << ")" << endl;
         ImageFrame frame;
@@ -131,8 +132,8 @@ private:
  */
 struct AudioParams {
     int samplerate = 44100;
-    float minFreq = 100.0f;
-    float maxFreq = 10000.0f;
+    float minFreq = 400.0f;
+    float maxFreq = 14000.0f;
     float durationPerColumn = 0.01f;
 };
 
@@ -142,27 +143,28 @@ struct AudioParams {
  * @brief Normalizes the audio buffer to the range [-1.0, 1.0].
  * @param audio The audio buffer to normalize.
  */
-inline void normalizeAudio(std::vector<float>& audio) {
+inline void normalizeAudio(std::vector<float> &audio) {
     float maxAmp = 0.0f;
-    for (const float v : audio) maxAmp = std::max(maxAmp, std::abs(v));
+    for (const float v: audio) maxAmp = std::max(maxAmp, std::abs(v));
     if (maxAmp > 0.0f) {
-        for (float& v : audio) v /= maxAmp;
+        for (float &v: audio) v /= maxAmp;
     }
 }
 
 // --- Main ---
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     cxxopts::Options options("ImageToSound", "Convert image to sound");
     options.add_options("General options")
-        ("h,help", "Print help")
-        ("i,input", "Input image path", cxxopts::value<std::string>()->default_value("Silly_Cat_Character.jpg"))
-        ("o,output", "Output sound path", cxxopts::value<std::string>()->default_value(""));
+            ("h,help", "Print help")
+            ("i,input", "Input image path", cxxopts::value<std::string>()->default_value("Silly_Cat_Character.jpg"))
+            ("o,output", "Output sound path", cxxopts::value<std::string>()->default_value(""));
 
     options.add_options("Audio options")
-        ("min-freq", "Minimum frequency", cxxopts::value<float>()->default_value("100.0"))
-        ("max-freq", "Maximum frequency", cxxopts::value<float>()->default_value("10000.0"))
-        ("samplerate", "Sample rate", cxxopts::value<int>()->default_value("44100"))
-        ("duration-per-column", "Duration per image column in seconds", cxxopts::value<float>()->default_value("0.01"));
+            ("min-freq", "Minimum frequency", cxxopts::value<float>()->default_value("400.0"))
+            ("max-freq", "Maximum frequency", cxxopts::value<float>()->default_value("14000.0"))
+            ("samplerate", "Sample rate", cxxopts::value<int>()->default_value("44100"))
+            ("duration-per-column", "Duration per image column in seconds",
+             cxxopts::value<float>()->default_value("0.01"));
 
     const cxxopts::ParseResult parsed = options.parse(argc, argv);
     if (parsed.count("help")) {
@@ -200,7 +202,7 @@ int main(int argc, char* argv[]) {
     // --- Audio bauen ---
     int totalSamples = 0;
     vector<int> frameOffsets;
-    for (auto &frame : img.frames) {
+    for (auto &frame: img.frames) {
         int colSamples = max(256, samplesPerColumn);
         frameOffsets.push_back(totalSamples);
         totalSamples += frame.width * colSamples;
@@ -213,7 +215,9 @@ int main(int argc, char* argv[]) {
         int offset = frameOffsets[f];
         vector<float> frequencies(frame.height);
         for (int y = 0; y < frame.height; ++y)
-            frequencies[y] = params.minFreq * pow(params.maxFreq / params.minFreq, static_cast<float>(frame.height - 1 - y) / static_cast<float>(frame.height - 1));
+            frequencies[y] = params.minFreq * pow(params.maxFreq / params.minFreq,
+                                                  static_cast<float>(frame.height - 1 - y) / static_cast<float>(
+                                                      frame.height - 1));
 
         // Jede Spalte bekommt mindestens 256 Samples für scharfes Spektrogramm
         int colSamples = max(256, samplesPerColumn);
@@ -226,17 +230,25 @@ int main(int argc, char* argv[]) {
 
         for (int x = 0; x < frame.width; ++x) {
             for (int i = 0; i < colSamples; ++i) {
+                float globalT = static_cast<float>(offset + x * colSamples + i) / static_cast<float>(params.samplerate);
                 float sample = 0.0f;
-                float t = static_cast<float>(i) / static_cast<float>(params.samplerate);
                 for (int y = 0; y < frame.height; ++y) {
-                    sample += frame.pixels[y * frame.width + x] * static_cast<float>(sin(2.0f * M_PI * frequencies[y] * t));
+                    float centered = frame.pixels[y * frame.width + x] - 0.5f;
+                    sample += centered * static_cast<float>(sin(2.0f * M_PI * frequencies[y] * globalT));
                 }
                 sample *= hann[i];
                 if (int indexInAudioFile = offset + x * colSamples + i; indexInAudioFile < finalAudio.size())
-                    finalAudio[indexInAudioFile] = sample;
+                    finalAudio[indexInAudioFile] += sample;
             }
         }
     }
+
+    float mean = std::accumulate(finalAudio.begin(), finalAudio.end(), 0.0f)
+                 / static_cast<float>(finalAudio.size());
+
+    for (auto &s: finalAudio)
+        s -= mean;
+
     // Normalisieren
     normalizeAudio(finalAudio);
 
