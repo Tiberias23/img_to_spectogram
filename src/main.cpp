@@ -12,23 +12,6 @@
 
 using namespace std;
 
-/**
- * @brief Loads a file into a vector of unsigned char.
- * @param path the path to load the file from
- * @return a vector with the frames
- * @author Lupo
- */
-inline std::vector<unsigned char> load_file(const std::string& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file: " + path);
-    }
-    return std::vector<unsigned char>{
-        std::istreambuf_iterator<char>(file),
-        std::istreambuf_iterator<char>()
-    };
-}
-
 // --- Structs ---
 /**
  * @brief Represents a single image frame with pixel data.
@@ -56,6 +39,24 @@ struct Image {
             return loadGIF(path);
         }
         return loadImage(path);
+    }
+
+private:
+    /**
+     * @brief Loads a file into a vector of unsigned char.
+     * @param path the path to load the file from
+     * @return a vector with the frames
+     * @author Lupo
+     */
+    static std::vector<unsigned char> load_file(const std::string& path) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open()) {
+            throw std::runtime_error("Failed to open file: " + path);
+        }
+        return std::vector<unsigned char>{
+            std::istreambuf_iterator<char>(file),
+            std::istreambuf_iterator<char>()
+        };
     }
 
     /**
@@ -179,7 +180,7 @@ struct FrequencyTable {
  * @param audio The output audio buffer to fill.
  * @param samplesPerColumn Number of samples per image column.
  */
-void generateAudio(const ImageFrame& frame, const FrequencyTable& table, std::vector<float>& audio, const int &samplesPerColumn) {
+inline void generateAudio(const ImageFrame& frame, const FrequencyTable& table, std::vector<float>& audio, const int &samplesPerColumn) {
     for (int x = 0; x < frame.width; ++x) {
         for (int i = 0; i < samplesPerColumn; ++i) {
             const int sampleIndex = x * samplesPerColumn + i;
