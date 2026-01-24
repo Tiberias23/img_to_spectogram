@@ -14,15 +14,67 @@
 #include <cxxopts.hpp>
 using namespace std;
 
+// --- Funktionen ---
+
+/**
+ * @brief macht einen Systemcall um zu prüfen ob ffmpeg im PATH ist
+ * @details macht einen Systemcall "ffmpeg -version" und prüft den Rückgabewert.
+  *         stdout und stderr werden verworfen.
+  *         Wenn der Rückgabewert 0 ist, wurde ffmpeg gefunden.
+ * @details Dies ist notwendig, um Audio in andere Formate als WAV zu konvertieren.
+ * @details ffmpeg muss installiert und im PATH sein.
+  *          Andernfalls wird nur WAV ausgegeben.
+  *@details  Siehe https://ffmpeg.org/download.html für Installationsanweisungen.
+  *          Unter Windows kann ffmpeg von https://ffmpeg.org/download.html#build-windows heruntergeladen werden.
+  *          Der entpackte Ordner muss dann zum PATH hinzugefügt werden.
+  *          Alternativ kann ffmpeg auch in das gleiche Verzeichnis wie die ausführbare Datei kopiert werden.
+ * @return true, wenn ffmpeg im PATH gefunden wurde
+ * @author Lupo
+ */
 [[nodiscard]] inline bool ffmpegExists() {
-    // Prüft ob ffmpeg im PATH ist
+#ifdef _WIN32
+    return std::system("ffmpeg -version > NUL 2>&1") == 0;
+#else
     return std::system("ffmpeg -version > /dev/null 2>&1") == 0;
+#endif
 }
 
-inline bool convertWithFFmpeg(const std::string &wavPath, const std::string &targetPath) {
-    const std::string cmd = "ffmpeg -y -i \"" + wavPath + "\" \"" + targetPath + "\"";
-    const int ret = std::system((cmd + " 2>&1").c_str());
-    return ret == 0;
+/**
+ * @brief Konvertiert eine WAV Datei mit ffmpeg in ein anderes Format
+ * @details Konvertiert die Datei wavPath in targetPath mit ffmpeg.
+ *            stdout und stderr werden in eine temporäre Log-Datei umgeleitet.
+ *            Im Fehlerfall wird der Inhalt der Log-Datei ausgegeben.
+ *            Die Log-Datei wird im Erfolgsfall gelöscht.
+ *            Dies geschieht, um das Konsolenfenster sauber zu halten. :3
+ * @param wavPath the input wav file path
+ * @param targetPath the output file path
+ * @return true if conversion was successful false otherwise
+ * @author Lupo
+ */
+bool convertWithFFmpeg(const std::string &wavPath, const std::string &targetPath) {
+    // Temporäre Log-Datei
+    std::string logFile = "ffmpeg.log";
+
+    // ffmpeg-Aufruf: stdout und stderr in logFile umleiten
+    std::string cmd = "ffmpeg -y -i \"" + wavPath + "\" \"" + targetPath + "\" > \"" + logFile + "\" 2>&1";
+    const int ret = std::system(cmd.c_str());
+
+    if (ret != 0) {
+        // Im Fehlerfall Log-Datei lesen und ausgeben
+        const std::ifstream log(logFile);
+        if (log.is_open()) {
+            std::stringstream buffer;
+            buffer << log.rdbuf();
+            std::cerr << "ffmpeg failed:\n" << buffer.str() << std::endl;
+        } else { // Für den Fall, dass die log datei nicht erstellt werden oder gelesen werden konnte, dass sollte aber eigentlich nie passieren.
+            std::cerr << "ffmpeg failed and log file could not be opened." << std::endl;
+        }
+        return false;
+    }
+
+    // Erfolg → Log löschen
+    std::remove(logFile.c_str());
+    return true;
 }
 
 // --- Main ---
@@ -100,6 +152,8 @@ int main(int argc, char *argv[]) {
     }
 
     // Reserve finalAudio
+    clog << "Generating audio: " << totalSamples << " samples at " << params.samplerate << " Hz" << endl;
+    clog << "This may take a while depending on image/gif size and number of frames..." << endl;
     vector<float> finalAudio(totalSamples, 0.0f);
     for (size_t f = 0; f < img.frames.size(); ++f) {
         auto &frame = img.frames[f];
@@ -144,6 +198,9 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+    clog << "Audio generation completed." << endl;
+    clog << "Post-processing audio..." << endl;
+    // --- Normalisieren ---
 
     float mean = std::accumulate(finalAudio.begin(), finalAudio.end(), 0.0f)
                  / static_cast<float>(finalAudio.size());
@@ -158,6 +215,9 @@ int main(int argc, char *argv[]) {
         for (float &v: finalAudio) v /= maxAmp;
     }
 
+    clog << "Audio post-processing completed." << endl;
+    clog << "Saving audio to file..." << endl;
+
     // --- WAV speichern ---
     AudioFile<float> wav;
     wav.setNumChannels(1);
@@ -171,20 +231,26 @@ int main(int argc, char *argv[]) {
     cout << "Audio saved to " << outputSoundPath << endl;
 
     if (outputFormat != "wav") {
+        clog << "Converting WAV to " << outputFormat << " using ffmpeg..." << endl;
         if (!ffmpegExists()) {
             cerr << "ffmpeg is not installed or not found in PATH. Cannot convert to " << outputFormat << endl;
+            cerr << "Will keep the WAV file at " << outputSoundPath << endl;
             return 1;
         }
         if (!convertWithFFmpeg(outputSoundPath, finalOutputPath.string())) {
             cerr << "Failed to convert WAV to " << outputFormat << endl;
             cerr << "Make sure ffmpeg supports the format." << endl;
+            cerr << "WAV file is kept at " << outputSoundPath << endl;
+            cerr << "See ffmpeg.log for details." << endl;
             return 1;
         }
         // Original WAV löschen
         if (!keepWav) {
             std::remove(outputSoundPath.c_str());
+            cout << "Intermediate WAV file deleted." << endl;
         }
         cout << "Converted audio saved to " << finalOutputPath.string() << endl;
     }
+    clog << "Good bye! :3" << endl;
     return 0;
 }
