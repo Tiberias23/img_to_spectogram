@@ -246,7 +246,7 @@ int main(int argc, char *argv[]) {
     } else if (scaleStr == "bark") {
         params.scaleType = AudioParams::ScaleType::BARK;
     } else {
-        throw std::runtime_error("Invalid scale type: " + scaleStr + " (use linear|log|mel)");
+        throw std::runtime_error("Invalid scale type: " + scaleStr + " (use linear|log|mel|bark)");
     }
 
     std::string normStr = toLower(parsed["norm"].as<std::string>());
