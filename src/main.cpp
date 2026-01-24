@@ -20,6 +20,7 @@ struct ImageFrame {
     int width{};
     int height{};
     std::vector<float> pixels; // normalisierte Pixelwerte
+    std::vector<int> delays; // nur für GIF
 };
 
 /**
@@ -65,44 +66,40 @@ private:
      * @return True if the GIF was loaded successfully, false otherwise.
      */
     bool loadGIF(const std::string& path) {
-        const auto data = load_file(path); // load_file liest das GIF komplett in einen vector<unsigned char>
+        const auto data = load_file(path);
 
         int* delays = nullptr;
         int frames_count = 0;
         int width = 0, height = 0;
 
         unsigned char* gif = stbi_load_gif_from_memory(
-            data.data(),
-            static_cast<int>(data.size()),
-            &delays,
-            &width,
-            &height,
-            &frames_count,
-            nullptr,
-            channels // 1 für Graustufen
+            data.data(), static_cast<int>(data.size()),
+            &delays, &width, &height, &frames_count, nullptr, channels
         );
 
         if (!gif || frames_count <= 0) {
             std::cerr << "Failed to load gif '" << path << "': " << stbi_failure_reason() << std::endl;
             return false;
         }
-
-        std::clog << "loaded gif '" << path << "' with " << frames_count << " frames (" << width << "x" << height << ")" << std::endl;
+        clog << "loaded gif '" << path << "' (" << width << "x" << height << "), " << frames_count << " frames" << endl;
 
         for (int f = 0; f < frames_count; ++f) {
             ImageFrame frame;
             frame.width = width;
             frame.height = height;
             frame.pixels.resize(width * height);
+            frame.delays.resize(1); // ein Delay pro Frame
 
-            for (int i = 0; i < width * height; ++i) {
+            for (int i = 0; i < width * height; ++i)
                 frame.pixels[i] = static_cast<float>(gif[f * width * height + i]) / 255.0f;
-            }
 
+            frame.delays[0] = (delays != nullptr) ? delays[f] : 10; // default 100ms
             frames.push_back(frame);
         }
 
         stbi_image_free(gif);
+        if (delays) free(delays);
+
         return true;
     }
 
@@ -139,60 +136,7 @@ struct AudioParams {
     float durationPerColumn = 0.01f;
 };
 
-/**
- * @brief Precomputes frequency table and sine wave samples.
- */
-struct FrequencyTable {
-    std::vector<float> frequencies;
-    std::vector<float> sin_table;
-
-    /**
-     * Generates a frequency table and corresponding sine wave samples.
-     * @param height Number of frequency bands (image height).
-     * @param samplesPerColumn Number of samples per image column.
-     * @param minFreq Minimum frequency.
-     * @param maxFreq Maximum frequency.
-     * @param samplerate Audio sample rate.
-     */
-    void generate(const int height, const int samplesPerColumn, const float minFreq, const float maxFreq, const int samplerate) {
-        frequencies.resize(height);
-        for (int y = 0; y < height; ++y) {
-            frequencies[y] = minFreq * std::pow(maxFreq / minFreq, static_cast<float>(height - 1 - y) / static_cast<float>(height - 1));
-        }
-
-        sin_table.resize(height * samplesPerColumn);
-        for (int y = 0; y < height; ++y) {
-            const float freq = frequencies[y];
-            for (int i = 0; i < samplesPerColumn; ++i) {
-                const float time = static_cast<float>(i) / static_cast<float>(samplerate);
-                sin_table[y * samplesPerColumn + i] = static_cast<float>(std::sin(2.0f * M_PI * freq * time));
-            }
-        }
-    }
-};
-
 // --- Functions ---
-
-/**
- * @brief Generates audio data from the image frame and frequency table.
- * @param frame The image frame containing pixel data.
- * @param table The frequency table with sine wave samples.
- * @param audio The output audio buffer to fill.
- * @param samplesPerColumn Number of samples per image column.
- */
-inline void generateAudio(const ImageFrame& frame, const FrequencyTable& table, std::vector<float>& audio, const int &samplesPerColumn) {
-    for (int x = 0; x < frame.width; ++x) {
-        for (int i = 0; i < samplesPerColumn; ++i) {
-            const int sampleIndex = x * samplesPerColumn + i;
-            audio[sampleIndex] = 0.0f;
-
-            for (int y = 0; y < frame.height; ++y) {
-                const float amp = frame.pixels[y * frame.width + x];
-                audio[sampleIndex] += amp * table.sin_table[y * samplesPerColumn + i];
-            }
-        }
-    }
-}
 
 /**
  * @brief Normalizes the audio buffer to the range [-1.0, 1.0].
@@ -253,38 +197,40 @@ int main(int argc, char* argv[]) {
 
     int samplesPerColumn = static_cast<int>(static_cast<float>(params.samplerate) * params.durationPerColumn);
 
+    // --- Audio bauen ---
     int totalSamples = 0;
-    for (auto& frame : img.frames) {
-        totalSamples += frame.width * samplesPerColumn;
+    vector<int> frameOffsets;
+    for (auto &frame : img.frames) {
+        int colSamples = max(256, samplesPerColumn);
+        frameOffsets.push_back(totalSamples);
+        totalSamples += frame.width * colSamples;
     }
-
+    // Reserve finalAudio
     vector<float> finalAudio(totalSamples, 0.0f);
-    int offset = 0;
 
-    for (const ImageFrame& frame : img.frames) {
-        // Frequenzen berechnen (Height -> Frequenz pro Zeile)
+    for (size_t f = 0; f < img.frames.size(); ++f) {
+        auto &frame = img.frames[f];
+        int offset = frameOffsets[f];
         vector<float> frequencies(frame.height);
         for (int y = 0; y < frame.height; ++y)
-            frequencies[y] = params.minFreq * std::pow(params.maxFreq / params.minFreq,
-                                    static_cast<float>(frame.height - 1 - y) / static_cast<float>(frame.height - 1));
+            frequencies[y] = params.minFreq * pow(params.maxFreq / params.minFreq, static_cast<float>(frame.height - 1 - y) / static_cast<float>(frame.height - 1));
 
-        // Audio direkt in finalAudio schreiben
+        // Jede Spalte bekommt mindestens 256 Samples für scharfes Spektrogramm
+        int colSamples = max(256, samplesPerColumn);
         for (int x = 0; x < frame.width; ++x) {
-            for (int i = 0; i < samplesPerColumn; ++i) {
+            for (int i = 0; i < colSamples; ++i) {
                 float sample = 0.0f;
+                float t = static_cast<float>(i) / static_cast<float>(params.samplerate);
                 for (int y = 0; y < frame.height; ++y) {
-                    float t = static_cast<float>(i) / static_cast<float>(params.samplerate);
-                    sample += frame.pixels[y * frame.width + x] * static_cast<float>(std::sin(2.0f * M_PI * frequencies[y] * t));
+                    sample += frame.pixels[y * frame.width + x] * static_cast<float>(sin(2.0f * M_PI * frequencies[y] * t));
                 }
-                finalAudio[offset + x * samplesPerColumn + i] = sample;
+                if (int indexInAudioFile = offset + x * colSamples + i; indexInAudioFile < finalAudio.size())
+                    finalAudio[indexInAudioFile] = sample;
             }
         }
-        offset += frame.width * samplesPerColumn;
     }
-
-    // Nach dem Anhängen aller Frames
+    // Normalisieren
     normalizeAudio(finalAudio);
-
 
     // --- WAV speichern ---
     AudioFile<float> wav;
@@ -296,6 +242,5 @@ int main(int argc, char* argv[]) {
 
     wav.save(outputSoundPath);
     cout << "Audio saved to " << outputSoundPath << endl;
-
     return 0;
 }
