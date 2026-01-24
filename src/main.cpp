@@ -14,6 +14,17 @@
 #include <cxxopts.hpp>
 using namespace std;
 
+[[nodiscard]] inline bool ffmpegExists() {
+    // Prüft ob ffmpeg im PATH ist
+    return std::system("ffmpeg -version > /dev/null 2>&1") == 0;
+}
+
+inline bool convertWithFFmpeg(const std::string &wavPath, const std::string &targetPath) {
+    const std::string cmd = "ffmpeg -y -i \"" + wavPath + "\" \"" + targetPath + "\"";
+    const int ret = std::system((cmd + " 2>&1").c_str());
+    return ret == 0;
+}
+
 // --- Main ---
 int main(int argc, char *argv[]) {
     cxxopts::Options options("ImageToSound", "Convert image to sound");
@@ -29,9 +40,14 @@ int main(int argc, char *argv[]) {
             ("duration-per-column", "Duration per image column in seconds",
              cxxopts::value<float>()->default_value("0.01"));
 
+    options.add_options("Output options")
+        ("f,format", "Convert WAV to another format using ffmpeg (e.g., mp3, flac)", cxxopts::value<std::string>()->default_value("wav"))
+        ("keep-wav", "Keep intermediate WAV file when converting to another format");
+
     const cxxopts::ParseResult parsed = options.parse(argc, argv);
     if (parsed.count("help")) {
         std::cout << options.help() << std::endl;
+        std::cout << "When using -f to convert to another format, except wav, ffmpeg must be installed and available in PATH." << std::endl;
         return 0;
     }
 
@@ -45,6 +61,21 @@ int main(int argc, char *argv[]) {
     } else {
         outputSoundPath = parsed["output"].as<std::string>();
     }
+
+    // Pfade vorbereiten
+    const std::string outputFormat = parsed["format"].as<std::string>(); // z.B. "mp3", "flac", "wav"
+    std::string finalOutputPath = outputSoundPath; // default WAV
+
+    // Falls ein anderes Format gewünscht wird, nur Dateiendung ändern
+    if (outputFormat != "wav") {
+        size_t lastDot = outputSoundPath.find_last_of('.');
+        if (lastDot != std::string::npos)
+            finalOutputPath = outputSoundPath.substr(0, lastDot) + "." + outputFormat;
+        else
+            finalOutputPath += "." + outputFormat;
+    }
+
+    bool keepWav = parsed.count("keep-wav") > 0;
 
     // --- Image laden ---
     Image img;
@@ -138,7 +169,25 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < finalAudio.size(); ++i)
         wav.samples[0][i] = finalAudio[i];
 
+    // Falls ein anderes Format gewünscht ist, erst als WAV speichern und dann konvertieren
     wav.save(outputSoundPath);
     cout << "Audio saved to " << outputSoundPath << endl;
+
+    if (outputFormat != "wav") {
+        if (!ffmpegExists()) {
+            cerr << "ffmpeg is not installed or not found in PATH. Cannot convert to " << outputFormat << endl;
+            return 1;
+        }
+        if (!convertWithFFmpeg(outputSoundPath, finalOutputPath)) {
+            cerr << "Failed to convert WAV to " << outputFormat << endl;
+            cerr << "Make sure ffmpeg supports the format." << endl;
+            return 1;
+        }
+        // Original WAV löschen
+        if (!keepWav) {
+            std::remove(outputSoundPath.c_str());
+        }
+        cout << "Converted audio saved to " << finalOutputPath << endl;
+    }
     return 0;
 }
