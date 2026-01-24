@@ -192,9 +192,9 @@ int main(int argc, char *argv[]) {
         frameOffsets.push_back(totalSamples);
         totalSamples += frame.width * colSamples;
     }
+
     // Reserve finalAudio
     vector<float> finalAudio(totalSamples, 0.0f);
-
     for (size_t f = 0; f < img.frames.size(); ++f) {
         auto &frame = img.frames[f];
         int offset = frameOffsets[f];
@@ -213,18 +213,20 @@ int main(int argc, char *argv[]) {
             hann[i] = 0.5f * static_cast<float>(1.0f - cos(2.0f * M_PI * i / (colSamples - 1)));
         }
 
+        #pragma omp parallel for schedule(static) default(none) \
+            shared(finalAudio, frame, frequencies, hann, offset, colSamples,params)
         for (int x = 0; x < frame.width; ++x) {
             for (int i = 0; i < colSamples; ++i) {
                 float globalT = static_cast<float>(offset + x * colSamples + i) / static_cast<float>(params.samplerate);
                 float sample = 0.0f;
                 for (int y = 0; y < frame.height; ++y) {
                     float centered = frame.pixels[y * frame.width + x] - 0.5f;
-                    centered = copysign(pow(fabs(centered), 1.5f), centered);
-                    sample += centered * static_cast<float>(sin(2.0f * M_PI * frequencies[y] * globalT));
+                    centered = centered * fabs(centered);
+                    sample += centered * sinf(static_cast<float>(2.0f * M_PI * frequencies[y] * globalT));
                 }
                 sample *= hann[i];
-                if (int indexInAudioFile = offset + x * colSamples + i; indexInAudioFile < finalAudio.size())
-                    finalAudio[indexInAudioFile] += sample;
+                int indexInAudioFile = offset + x * colSamples + i;
+                finalAudio[indexInAudioFile] += sample;
             }
         }
     }
@@ -243,7 +245,7 @@ int main(int argc, char *argv[]) {
     }
 
     // --- WAV speichern ---
-    AudioFile<float> wav;
+    AudioFile<double> wav;
     wav.setNumChannels(1);
     wav.setSampleRate(params.samplerate);
     wav.setNumSamplesPerChannel(static_cast<int>(finalAudio.size()));
