@@ -1,3 +1,10 @@
+#build dirs
+*build*
+
+#idestuff
+.vs
+.idea
+
 # Prerequisites
 *.d
 
