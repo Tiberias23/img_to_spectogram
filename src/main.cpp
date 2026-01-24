@@ -3,29 +3,118 @@
 #include <cmath>
 #include <string>
 #include <algorithm>
+#include <fstream>
 
 #include <AudioFile.h>
+#include <cxxopts.hpp>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 using namespace std;
 
+/**
+ * @brief Loads a file into a vector of unsigned char.
+ * @param path the path to load the file from
+ * @return a vector with the frames
+ * @author Lupo
+ */
+inline std::vector<unsigned char> load_file(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open file: " + path);
+    }
+    return std::vector<unsigned char>{
+        std::istreambuf_iterator<char>(file),
+        std::istreambuf_iterator<char>()
+    };
+}
+
 // --- Structs ---
+/**
+ * @brief Represents a single image frame with pixel data.
+ */
 struct ImageFrame {
-    int width;
-    int height;
+    int width{};
+    int height{};
     std::vector<float> pixels; // normalisierte Pixelwerte
 };
 
+/**
+ * @brief Simple image structure to hold frames.
+ */
 struct Image {
     int channels = 1; // Graustufen
     std::vector<ImageFrame> frames;
 
-    bool loadSingleImage(const std::string& path) {
+    /**
+     * @brief load an image or GIF from the given path
+     * @param path the path to load the image or GIF from
+     * @return true if successful, false otherwise
+     */
+    bool load(const std::string &path) {
+        if (path.find(".gif") != std::string::npos) {
+            return loadGIF(path);
+        }
+        return loadImage(path);
+    }
+
+    /**
+     * @brief Loads a GIF image from the specified path.
+     * @param path The file path of the GIF image.
+     * @return True if the GIF was loaded successfully, false otherwise.
+     */
+    bool loadGIF(const std::string& path) {
+        const auto data = load_file(path); // load_file liest das GIF komplett in einen vector<unsigned char>
+
+        int* delays = nullptr;
+        int frames_count = 0;
+        int width = 0, height = 0;
+
+        unsigned char* gif = stbi_load_gif_from_memory(
+            data.data(),
+            static_cast<int>(data.size()),
+            &delays,
+            &width,
+            &height,
+            &frames_count,
+            nullptr,
+            channels // 1 für Graustufen
+        );
+
+        if (!gif || frames_count <= 0) {
+            std::cerr << "Failed to load gif '" << path << "': " << stbi_failure_reason() << std::endl;
+            return false;
+        }
+
+        std::clog << "loaded gif '" << path << "' with " << frames_count << " frames (" << width << "x" << height << ")" << std::endl;
+
+        for (int f = 0; f < frames_count; ++f) {
+            ImageFrame frame;
+            frame.width = width;
+            frame.height = height;
+            frame.pixels.resize(width * height);
+
+            for (int i = 0; i < width * height; ++i) {
+                frame.pixels[i] = static_cast<float>(gif[f * width * height + i]) / 255.0f;
+            }
+
+            frames.push_back(frame);
+        }
+
+        stbi_image_free(gif);
+        return true;
+    }
+
+    /**
+     * @brief Loads an image from the specified path.
+     * @param path The file path of the image.
+     * @return True if the image was loaded successfully, false otherwise.
+     */
+    bool loadImage(const std::string& path) {
         int w, h, c;
         unsigned char* data = stbi_load(path.c_str(), &w, &h, &c, channels);
         if (!data) return false;
-
+        clog << "loaded image '" << path << "' (" << w << "x" << h << ")" << endl;
         ImageFrame frame;
         frame.width = w;
         frame.height = h;
@@ -39,6 +128,9 @@ struct Image {
     }
 };
 
+/**
+ * @brief Audio parameters for sound generation.
+ */
 struct AudioParams {
     int samplerate = 44100;
     float minFreq = 100.0f;
@@ -46,78 +138,152 @@ struct AudioParams {
     float durationPerColumn = 0.01f;
 };
 
+/**
+ * @brief Precomputes frequency table and sine wave samples.
+ */
 struct FrequencyTable {
     std::vector<float> frequencies;
     std::vector<float> sin_table;
 
-    void generate(int height, int samplesPerColumn, float minFreq, float maxFreq, int samplerate) {
+    /**
+     * Generates a frequency table and corresponding sine wave samples.
+     * @param height Number of frequency bands (image height).
+     * @param samplesPerColumn Number of samples per image column.
+     * @param minFreq Minimum frequency.
+     * @param maxFreq Maximum frequency.
+     * @param samplerate Audio sample rate.
+     */
+    void generate(const int height, const int samplesPerColumn, const float minFreq, const float maxFreq, const int samplerate) {
         frequencies.resize(height);
         for (int y = 0; y < height; ++y) {
-            frequencies[y] = minFreq * std::pow(maxFreq / minFreq, static_cast<float>(height - 1 - y) / (height - 1));
+            frequencies[y] = minFreq * std::pow(maxFreq / minFreq, static_cast<float>(height - 1 - y) / static_cast<float>(height - 1));
         }
 
         sin_table.resize(height * samplesPerColumn);
         for (int y = 0; y < height; ++y) {
-            float freq = frequencies[y];
+            const float freq = frequencies[y];
             for (int i = 0; i < samplesPerColumn; ++i) {
-                float time = static_cast<float>(i) / samplerate;
-                sin_table[y * samplesPerColumn + i] = std::sin(2.0f * M_PI * freq * time);
+                const float time = static_cast<float>(i) / static_cast<float>(samplerate);
+                sin_table[y * samplesPerColumn + i] = static_cast<float>(std::sin(2.0f * M_PI * freq * time));
             }
         }
     }
 };
 
-// --- Main ---
-int main() {
-    string inputImagePath = "/home/lupo/Bilder/Boy_Bi_kissermeme/Silly_Cat_Character.jpg";
-    string outputSoundPath = "./bild.wav";
+// --- Functions ---
 
-    // --- Image laden ---
-    Image img;
-    if (!img.loadSingleImage(inputImagePath)) {
-        cout << "Failed to load image." << endl;
-        return 1;
-    }
-    ImageFrame& frame = img.frames[0]; // erstes Frame nutzen
-    cout << "Image loaded: " << frame.width << "x" << frame.height << endl;
-
-    // --- Audio-Parameter ---
-    AudioParams params;
-    int samplesPerColumn = static_cast<int>(params.samplerate * params.durationPerColumn);
-    int totalSamples = samplesPerColumn * frame.width;
-    vector<float> audio(totalSamples, 0.0f);
-
-    // --- Frequenzen / Sinus-Tabelle ---
-    FrequencyTable table;
-    table.generate(frame.height, samplesPerColumn, params.minFreq, params.maxFreq, params.samplerate);
-
-    // --- Audio erzeugen ---
+/**
+ * @brief Generates audio data from the image frame and frequency table.
+ * @param frame The image frame containing pixel data.
+ * @param table The frequency table with sine wave samples.
+ * @param audio The output audio buffer to fill.
+ * @param samplesPerColumn Number of samples per image column.
+ */
+void generateAudio(const ImageFrame& frame, const FrequencyTable& table, std::vector<float>& audio, const int &samplesPerColumn) {
     for (int x = 0; x < frame.width; ++x) {
         for (int i = 0; i < samplesPerColumn; ++i) {
-            int sampleIndex = x * samplesPerColumn + i;
+            const int sampleIndex = x * samplesPerColumn + i;
             audio[sampleIndex] = 0.0f;
 
             for (int y = 0; y < frame.height; ++y) {
-                float amp = frame.pixels[y * frame.width + x];
+                const float amp = frame.pixels[y * frame.width + x];
                 audio[sampleIndex] += amp * table.sin_table[y * samplesPerColumn + i];
             }
         }
     }
+}
 
-    // --- Normalisieren ---
+/**
+ * @brief Normalizes the audio buffer to the range [-1.0, 1.0].
+ * @param audio The audio buffer to normalize.
+ */
+inline void normalizeAudio(std::vector<float>& audio) {
     float maxAmp = 0.0f;
-    for (float v : audio) maxAmp = std::max(maxAmp, std::abs(v));
+    for (const float v : audio) maxAmp = std::max(maxAmp, std::abs(v));
     if (maxAmp > 0.0f) {
         for (float& v : audio) v /= maxAmp;
     }
+}
+
+// --- Main ---
+int main(int argc, char* argv[]) {
+    cxxopts::Options options("ImageToSound", "Convert image to sound");
+    options.add_options("General options")
+        ("h,help", "Print help")
+        ("i,input", "Input image path", cxxopts::value<std::string>()->default_value("Silly_Cat_Character.jpg"))
+        ("o,output", "Output sound path", cxxopts::value<std::string>()->default_value(""));
+
+    options.add_options("Audio options")
+        ("min-freq", "Minimum frequency", cxxopts::value<float>()->default_value("100.0"))
+        ("max-freq", "Maximum frequency", cxxopts::value<float>()->default_value("10000.0"))
+        ("samplerate", "Sample rate", cxxopts::value<int>()->default_value("44100"))
+        ("duration-per-column", "Duration per image column in seconds", cxxopts::value<float>()->default_value("0.01"));
+
+    const cxxopts::ParseResult parsed = options.parse(argc, argv);
+    if (parsed.count("help")) {
+        std::cout << options.help() << std::endl;
+        return 0;
+    }
+
+    // --- Pfade ---
+    const string inputImagePath = parsed["input"].as<std::string>();
+    if (inputImagePath.empty()) throw std::runtime_error("Input path cannot be empty");
+
+    string outputSoundPath;
+    if (parsed["output"].as<std::string>().empty()) {
+        outputSoundPath = inputImagePath.substr(0, inputImagePath.find_last_of('.')) + ".wav";
+    } else {
+        outputSoundPath = parsed["output"].as<std::string>();
+    }
+
+    // --- Image laden ---
+    Image img;
+    if (!img.load(inputImagePath)) {
+        cerr << "Failed to load image: " << inputImagePath << endl;
+        return 1;
+    }
+
+    // --- Audio-Parameter ---
+    AudioParams params;
+    params.samplerate = parsed["samplerate"].as<int>();
+    params.minFreq = parsed["minfreq"].as<float>();
+    params.maxFreq = parsed["maxfreq"].as<float>();
+    params.durationPerColumn = parsed["duration-per-column"].as<float>();
+
+    int samplesPerColumn = static_cast<int>(static_cast<float>(params.samplerate) * params.durationPerColumn);
+
+    int totalSamples = 0;
+    for (auto& frame : img.frames) {
+        totalSamples += frame.width * samplesPerColumn;
+    }
+
+    vector<float> finalAudio; // Audio für alle Frames zusammen
+    finalAudio.reserve(totalSamples);
+    for (auto& frame : img.frames) {
+        vector<float> audio(frame.width * samplesPerColumn, 0.0f);
+
+        // Frequenzen neu generieren pro Frame
+        FrequencyTable table;
+        table.generate(frame.height, samplesPerColumn, params.minFreq, params.maxFreq, params.samplerate);
+
+        // Audio erzeugen
+        generateAudio(frame, table, audio, samplesPerColumn);
+
+        // An finalAudio anhängen
+        finalAudio.insert(finalAudio.end(), audio.begin(), audio.end());
+    }
+
+    // Nach dem Anhängen aller Frames
+    normalizeAudio(finalAudio);
+
 
     // --- WAV speichern ---
     AudioFile<float> wav;
     wav.setNumChannels(1);
     wav.setSampleRate(params.samplerate);
-    wav.setNumSamplesPerChannel(totalSamples);
-    for (int i = 0; i < totalSamples; ++i)
-        wav.samples[0][i] = audio[i];
+    wav.setNumSamplesPerChannel(static_cast<int>(finalAudio.size()));
+    for (int i = 0; i < finalAudio.size(); ++i)
+        wav.samples[0][i] = finalAudio[i];
 
     wav.save(outputSoundPath);
     cout << "Audio saved to " << outputSoundPath << endl;

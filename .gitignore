@@ -1,3 +1,6 @@
+#ignore output files
+*.wav
+
 #build dirs
 *build*
 
