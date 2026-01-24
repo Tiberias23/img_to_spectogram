@@ -64,15 +64,12 @@ int main(int argc, char *argv[]) {
 
     // Pfade vorbereiten
     const std::string outputFormat = parsed["format"].as<std::string>(); // z.B. "mp3", "flac", "wav"
-    std::string finalOutputPath = outputSoundPath; // default WAV
+    std::filesystem::path wavPath(outputSoundPath);
+    std::filesystem::path finalOutputPath = wavPath; // default WAV
 
     // Falls ein anderes Format gewünscht wird, nur Dateiendung ändern
     if (outputFormat != "wav") {
-        size_t lastDot = outputSoundPath.find_last_of('.');
-        if (lastDot != std::string::npos)
-            finalOutputPath = outputSoundPath.substr(0, lastDot) + "." + outputFormat;
-        else
-            finalOutputPath += "." + outputFormat;
+        finalOutputPath.replace_extension(outputFormat);
     }
 
     bool keepWav = parsed.count("keep-wav") > 0;
@@ -178,7 +175,7 @@ int main(int argc, char *argv[]) {
             cerr << "ffmpeg is not installed or not found in PATH. Cannot convert to " << outputFormat << endl;
             return 1;
         }
-        if (!convertWithFFmpeg(outputSoundPath, finalOutputPath)) {
+        if (!convertWithFFmpeg(outputSoundPath, finalOutputPath.string())) {
             cerr << "Failed to convert WAV to " << outputFormat << endl;
             cerr << "Make sure ffmpeg supports the format." << endl;
             return 1;
@@ -187,7 +184,7 @@ int main(int argc, char *argv[]) {
         if (!keepWav) {
             std::remove(outputSoundPath.c_str());
         }
-        cout << "Converted audio saved to " << finalOutputPath << endl;
+        cout << "Converted audio saved to " << finalOutputPath.string() << endl;
     }
     return 0;
 }
