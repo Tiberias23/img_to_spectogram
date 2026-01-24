@@ -217,6 +217,13 @@ int main(int argc, char* argv[]) {
 
         // Jede Spalte bekommt mindestens 256 Samples für scharfes Spektrogramm
         int colSamples = max(256, samplesPerColumn);
+
+        // Hann-Window vorberechnen (reduziert Spectral Leakage)
+        vector<float> hann(colSamples);
+        for (int i = 0; i < colSamples; ++i) {
+            hann[i] = 0.5f * static_cast<float>(1.0f - cos(2.0f * M_PI * i / (colSamples - 1)));
+        }
+
         for (int x = 0; x < frame.width; ++x) {
             for (int i = 0; i < colSamples; ++i) {
                 float sample = 0.0f;
@@ -224,6 +231,7 @@ int main(int argc, char* argv[]) {
                 for (int y = 0; y < frame.height; ++y) {
                     sample += frame.pixels[y * frame.width + x] * static_cast<float>(sin(2.0f * M_PI * frequencies[y] * t));
                 }
+                sample *= hann[i];
                 if (int indexInAudioFile = offset + x * colSamples + i; indexInAudioFile < finalAudio.size())
                     finalAudio[indexInAudioFile] = sample;
             }
