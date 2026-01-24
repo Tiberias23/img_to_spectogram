@@ -246,8 +246,8 @@ int main(int argc, char* argv[]) {
     // --- Audio-Parameter ---
     AudioParams params;
     params.samplerate = parsed["samplerate"].as<int>();
-    params.minFreq = parsed["minfreq"].as<float>();
-    params.maxFreq = parsed["maxfreq"].as<float>();
+    params.minFreq = parsed["min-freq"].as<float>();
+    params.maxFreq = parsed["max-freq"].as<float>();
     params.durationPerColumn = parsed["duration-per-column"].as<float>();
 
     int samplesPerColumn = static_cast<int>(static_cast<float>(params.samplerate) * params.durationPerColumn);
