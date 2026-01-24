@@ -10,7 +10,6 @@
 #include <cxxopts.hpp>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-
 using namespace std;
 
 // --- Structs ---
@@ -234,6 +233,7 @@ int main(int argc, char *argv[]) {
                 float sample = 0.0f;
                 for (int y = 0; y < frame.height; ++y) {
                     float centered = frame.pixels[y * frame.width + x] - 0.5f;
+                    centered = copysign(pow(fabs(centered), 1.5f), centered);
                     sample += centered * static_cast<float>(sin(2.0f * M_PI * frequencies[y] * globalT));
                 }
                 sample *= hann[i];
