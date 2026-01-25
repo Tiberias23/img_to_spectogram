@@ -60,6 +60,16 @@ float freqForY(const int y, const int height, const AudioParams &params) {
     return params.minFreq; // unreachable, aber Compiler happy
 }
 
+/**
+ * @brief Speichert das Audio als WAV-Datei
+ * @param useStereo ob Stereo verwendet wird
+ * @param outputSoundPath der Pfad zur Ausgabedatei
+ * @param finalAudio das finale Audio (Mono)
+ * @param finalAudioL das finale Audio links (Stereo)
+ * @param finalAudioR das finale Audio rechts (Stereo)
+ * @return true bei Erfolg, false bei Fehler
+ * @author Lupo
+ */
 [[nodiscard]] bool save_wav_file(const bool useStereo, const std::string &outputSoundPath,
     const std::vector<float> &finalAudio, const std::vector<float> &finalAudioL, const std::vector<float> &finalAudioR) {
     try {
@@ -90,6 +100,15 @@ float freqForY(const int y, const int height, const AudioParams &params) {
     }
 }
 
+/**
+ * @brief Konvertiert die WAV-Datei in ein anderes Format mit ffmpeg
+ * @param outputFormat das gewünschte Ausgabeformat (z.B. "mp3", "flac")
+ * @param outputSoundPath der Pfad zur WAV-Datei
+ * @param keepWav ob die WAV-Datei behalten werden soll
+ * @param finalOutputPath der Pfad zur finalen Ausgabedatei (standardmäßig "./" als Dummy-Parameter, der muss übergeben werden!!!)
+ * @return true bei Erfolg, false bei Fehler
+ * @author Lupo
+ */
 [[nodiscard]] bool convert_file(const std::string &outputFormat, const std::string &outputSoundPath, const bool keepWav,
                                               const std::filesystem::path &finalOutputPath = "./" /*Dummy Parameter*/) {
     clog << "Converting WAV to " << outputFormat << " using ffmpeg..." << endl;
