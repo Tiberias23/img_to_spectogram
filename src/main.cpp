@@ -28,7 +28,7 @@ using namespace std;
  * @author Lupo
  */
 float freqForY(const int y, const int height, const AudioParams &params) {
-    if (height <= 1) // Vermeidung Division durch Null
+    if (height <= 1) // Vermeidung Division durch null
         return params.minFreq;
 
     const float t = static_cast<float>(height - 1 - y) /
@@ -325,7 +325,7 @@ int main(int argc, char *argv[]) {
 
     // DC-Offset entfernen
     auto removeDC = [](vector<float> &buf) -> void {
-        const float mean = std::accumulate(buf.begin(), buf.end(), 0.0f) / buf.size();
+        const float mean = std::accumulate(buf.begin(), buf.end(), 0.0f) / static_cast<float>(buf.size());
         for (auto &s: buf) s -= mean;
     };
 
