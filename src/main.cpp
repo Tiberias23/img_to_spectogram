@@ -60,6 +60,59 @@ float freqForY(const int y, const int height, const AudioParams& params) {
     return params.minFreq; // unreachable, aber Compiler happy
 }
 
+[[nodiscard]] bool save_and_convert_output_file(const bool useStereo,
+              const std::string& outputSoundPath,
+              const std::string& outputFormat,
+              const std::filesystem::path& finalOutputPath,
+              const bool keepWav,
+              const std::vector<float>& finalAudio,
+              const std::vector<float>& finalAudioL,
+              const std::vector<float>& finalAudioR) {
+    // --- WAV speichern ---
+    AudioFile<float> wav;
+    if (useStereo) {
+        wav.setNumChannels(2);
+        wav.setNumSamplesPerChannel(finalAudioL.size());
+        for (size_t i = 0; i < finalAudioL.size(); ++i) {
+            wav.samples[0][i] = finalAudioL[i];
+            wav.samples[1][i] = finalAudioR[i];
+        }
+    } else {
+        wav.setNumChannels(1);
+        wav.setNumSamplesPerChannel(finalAudio.size());
+        for (size_t i = 0; i < finalAudio.size(); ++i)
+            wav.samples[0][i] = finalAudio[i];
+    }
+
+
+    // Falls ein anderes Format gewünscht ist, erst als WAV speichern und dann konvertieren
+    wav.save(outputSoundPath);
+    cout << "Audio saved to " << outputSoundPath << endl;
+
+    if (outputFormat != "wav") {
+        clog << "Converting WAV to " << outputFormat << " using ffmpeg..." << endl;
+        if (!ffmpegExists()) {
+            cerr << "ffmpeg is not installed or not found in PATH. Cannot convert to " << outputFormat << endl;
+            cerr << "Will keep the WAV file at " << outputSoundPath << endl;
+            return false;
+        }
+        if (!convertWithFFmpeg(outputSoundPath, finalOutputPath.string())) {
+            cerr << "Failed to convert WAV to " << outputFormat << endl;
+            cerr << "Make sure ffmpeg supports the format." << endl;
+            cerr << "WAV file is kept at " << outputSoundPath << endl;
+            cerr << "See ffmpeg.log for details." << endl;
+            return false;
+        }
+        // Original WAV löschen
+        if (!keepWav) {
+            std::remove(outputSoundPath.c_str());
+            cout << "Intermediate WAV file deleted." << endl;
+        }
+        cout << "Converted audio saved to " << finalOutputPath.string() << endl;
+    }
+    return true;
+}
+
 enum class StereoNorm {
     LINKED,     // beide Kanäle gemeinsam (empfohlen)
     INDEPENDENT // L und R getrennt
@@ -315,46 +368,8 @@ int main(int argc, char *argv[]) {
     clog << "Saving audio to file..." << endl;
 
     // --- WAV speichern ---
-    AudioFile<float> wav;
-    if (useStereo) {
-        wav.setNumChannels(2);
-        wav.setNumSamplesPerChannel(finalAudioL.size());
-        for (size_t i = 0; i < finalAudioL.size(); ++i) {
-            wav.samples[0][i] = finalAudioL[i];
-            wav.samples[1][i] = finalAudioR[i];
-        }
-    } else {
-        wav.setNumChannels(1);
-        wav.setNumSamplesPerChannel(finalAudio.size());
-        for (size_t i = 0; i < finalAudio.size(); ++i)
-            wav.samples[0][i] = finalAudio[i];
-    }
-
-
-    // Falls ein anderes Format gewünscht ist, erst als WAV speichern und dann konvertieren
-    wav.save(outputSoundPath);
-    cout << "Audio saved to " << outputSoundPath << endl;
-
-    if (outputFormat != "wav") {
-        clog << "Converting WAV to " << outputFormat << " using ffmpeg..." << endl;
-        if (!ffmpegExists()) {
-            cerr << "ffmpeg is not installed or not found in PATH. Cannot convert to " << outputFormat << endl;
-            cerr << "Will keep the WAV file at " << outputSoundPath << endl;
-            return 1;
-        }
-        if (!convertWithFFmpeg(outputSoundPath, finalOutputPath.string())) {
-            cerr << "Failed to convert WAV to " << outputFormat << endl;
-            cerr << "Make sure ffmpeg supports the format." << endl;
-            cerr << "WAV file is kept at " << outputSoundPath << endl;
-            cerr << "See ffmpeg.log for details." << endl;
-            return 1;
-        }
-        // Original WAV löschen
-        if (!keepWav) {
-            std::remove(outputSoundPath.c_str());
-            cout << "Intermediate WAV file deleted." << endl;
-        }
-        cout << "Converted audio saved to " << finalOutputPath.string() << endl;
+    if (!save_and_convert_output_file(useStereo, wavPath.string(), outputFormat, finalOutputPath, keepWav, finalAudio, finalAudioL, finalAudioR)) {
+        return 1;
     }
     clog << "Good bye! :3" << endl;
     return 0;
