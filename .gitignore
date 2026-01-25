@@ -10,6 +10,7 @@ compile_commands.json
 #idestuff
 .vs
 .idea
+.cache
 
 # Prerequisites
 *.d
