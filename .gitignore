@@ -1,3 +1,6 @@
+# ignore files for nvim
+compile_commands.json
+
 #ignore output files
 *.wav
 

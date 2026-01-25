@@ -3,7 +3,6 @@
 #include <cmath>
 #include <string>
 #include <algorithm>
-#include <fstream>
 #include <numeric>
 
 // Bibliotheken einbinden
