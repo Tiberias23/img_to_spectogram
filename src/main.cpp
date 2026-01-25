@@ -160,14 +160,16 @@ int main(int argc, char *argv[]) {
     }
 
 
-    int samplesPerColumn = static_cast<int>(static_cast<float>(params.samplerate) * params.durationPerColumn); // Samples pro Spalte
+    // Samples pro Spalte
+    int samplesPerColumn = static_cast<int>(static_cast<float>(params.samplerate) * params.durationPerColumn);
 
     // --- Audio bauen ---
     int totalSamples = 0; // Gesamtanzahl der Samples
     vector<int> frameOffsets; // Offset für jeden Frame im finalen Audio
     frameOffsets.reserve(img.frames.size()); // Speicher reservieren für Frame-Offsets
     for (auto &frame: img.frames) {
-        int colSamples = max(256, samplesPerColumn); // Jede Spalte bekommt mindestens 256 Samples für scharfes Spektrogramm
+        // Jede Spalte bekommt mindestens 256 Samples für scharfes Spektrogramm
+        int colSamples = max(256, samplesPerColumn);
         frameOffsets.push_back(totalSamples);            // Offset für diesen Frame
         totalSamples += frame.width * colSamples;        // Samples für diesen Frame hinzufügen
     }
@@ -280,11 +282,13 @@ int main(int argc, char *argv[]) {
     if (useStereo) { // Stereo
         if (norm == NormType::RMS) { // RMS
             double sumSq = 0.0; // Summe der Quadrate
-            for (size_t i = 0; i < finalAudioL.size(); ++i) { // Beide Kanäle zusammen betrachten (wir müssen nur die größe von einem Kanal kennen, sind ja gleich groß)
+            // beide Kanäle zusammen betrachten (wir müssen nur die größe von einem Kanal kennen, sind ja gleich groß)
+            for (size_t i = 0; i < finalAudioL.size(); ++i) {
                 sumSq += finalAudioL[i] * finalAudioL[i];
                 sumSq += finalAudioR[i] * finalAudioR[i];
             }
-            auto rms = static_cast<float>(std::sqrt(sumSq / (2.0 * static_cast<float>(finalAudioL.size())))); // RMS über beide Kanäle
+            // RMS über beide Kanäle
+            auto rms = static_cast<float>(std::sqrt(sumSq / (2.0 * static_cast<float>(finalAudioL.size()))));
             float gain = 0.1f / std::max(rms, 1e-6f);   // Verstärkung berechnen
             for (size_t i = 0; i < finalAudioL.size(); ++i) { // Beide Kanäle normalisieren
                 finalAudioL[i] *= gain;
@@ -312,7 +316,8 @@ int main(int argc, char *argv[]) {
             for (float &s: finalAudio) s *= gain; // Normalisieren
         } else {
             // PEAK
-            float maxAmp = *ranges::max_element(finalAudio, [](const float a, const float b) -> bool { // Maximum der absoluten Werte finden
+            // Maximum der absoluten Werte finden
+            float maxAmp = *ranges::max_element(finalAudio, [](const float a, const float b) -> bool {
                 return std::abs(a) < std::abs(b);
             });
             if (maxAmp > 0.0f) { // Normalisieren, falls maxAmp > 0
@@ -327,10 +332,12 @@ int main(int argc, char *argv[]) {
     clog << "Saving audio to file..." << endl;
 
     // --- WAV speichern ---
-    if (!save_wav_file(useStereo, wavPath.string(), finalAudio, finalAudioL, finalAudioR)) { // WAV speichern
+    // WAV speichern
+    if (!save_wav_file(useStereo, wavPath.string(), finalAudio, finalAudioL, finalAudioR)) {
         cerr << "Could not save WAV file to " << wavPath.string() << endl;
         return 1;
     }
+    clog << "WAV file saved successfully." << endl;
 
     // --- Falls gewünscht, in anderes Format konvertieren ---
     if (outputFormat != "wav") {
