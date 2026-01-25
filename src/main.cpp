@@ -16,48 +16,6 @@
 #include <ungrouped_utility_funktions.hpp>
 using namespace std;
 
-// --- Funktionen ---
-
-/**
- * @brief Berechnet die Frequenz für eine gegebene y-Position im Bild
- * @param y die y-Position (0 = unten, height-1 = oben)
- * @param height die Höhe des Bildes
- * @param params die Audio-Parameter
- * @return die Frequenz in Hz
- * @author Lupo
- */
-float freqForY(const int y, const int height, const AudioParams &params) {
-    if (height <= 1) // Vermeidung Division durch null
-        return params.minFreq;
-
-    const float t = static_cast<float>(height - 1 - y) /
-                    static_cast<float>(height - 1);
-
-    switch (params.scaleType) {
-        case AudioParams::ScaleType::LINEAR:
-            return params.minFreq +
-                   t * (params.maxFreq - params.minFreq);
-
-        case AudioParams::ScaleType::LOGARITHMIC:
-            return params.minFreq *
-                   std::pow(params.maxFreq / params.minFreq, t);
-
-        case AudioParams::ScaleType::MEL: {
-            const float melMin = hzToMel(params.minFreq);
-            const float melMax = hzToMel(params.maxFreq);
-            const float mel = melMin + t * (melMax - melMin);
-            return melToHz(mel);
-        }
-
-        case AudioParams::ScaleType::BARK: {
-            const float barkMin = hzToBark(params.minFreq);
-            const float barkMax = hzToBark(params.maxFreq);
-            const float bark = barkMin + t * (barkMax - barkMin);
-            return barkToHz(bark);
-        }
-    }
-    return params.minFreq; // unreachable, aber Compiler happy
-}
 
 /**
  * @brief Speichert das Audio als WAV-Datei
@@ -69,7 +27,7 @@ float freqForY(const int y, const int height, const AudioParams &params) {
  * @return true bei Erfolg, false bei Fehler
  * @author Lupo
  */
-[[nodiscard]] bool save_wav_file(const bool useStereo, const std::string &outputSoundPath,
+[[nodiscard]] inline bool save_wav_file(const bool useStereo, const std::string &outputSoundPath,
     const std::vector<float> &finalAudio, const std::vector<float> &finalAudioL, const std::vector<float> &finalAudioR) {
     try {
         // --- WAV speichern ---
@@ -91,51 +49,13 @@ float freqForY(const int y, const int height, const AudioParams &params) {
 
         // Falls ein anderes Format gewünscht ist, erst als WAV speichern und dann konvertieren
         wav.save(outputSoundPath);
-        cout << "Audio saved to " << outputSoundPath << endl;
+        std::cout << "Audio saved to " << outputSoundPath << std::endl;
         return true;
     } catch (std::exception &e) {
-        cerr << "Error saving WAV file: " << e.what() << endl;
+        std::cerr << "Error saving WAV file: " << e.what() << std::endl;
         return false;
     }
 }
-
-/**
- * @brief Konvertiert die WAV-Datei in ein anderes Format mit ffmpeg
- * @param outputFormat das gewünschte Ausgabeformat (z.B. "mp3", "flac")
- * @param outputSoundPath der Pfad zur WAV-Datei
- * @param keepWav ob die WAV-Datei behalten werden soll
- * @param finalOutputPath der Pfad zur finalen Ausgabedatei (standardmäßig "./" als Dummy-Parameter, der muss übergeben werden!!!)
- * @return true bei Erfolg, false bei Fehler
- * @author Lupo
- */
-[[nodiscard]] bool convert_file(const std::string &outputFormat, const std::string &outputSoundPath, const bool keepWav,
-                                              const std::filesystem::path &finalOutputPath = "./" /*Dummy Parameter*/) {
-    clog << "Converting WAV to " << outputFormat << " using ffmpeg..." << endl;
-    if (!ffmpegExists()) {
-        cerr << "ffmpeg is not installed or not found in PATH. Cannot convert to " << outputFormat << endl;
-        cerr << "Will keep the WAV file at " << outputSoundPath << endl;
-        return false;
-    }
-    if (!convertWithFFmpeg(outputSoundPath, finalOutputPath.string())) {
-        cerr << "Failed to convert WAV to " << outputFormat << endl;
-        cerr << "Make sure ffmpeg supports the format." << endl;
-        cerr << "WAV file is kept at " << outputSoundPath << endl;
-        cerr << "See ffmpeg.log for details." << endl;
-        return false;
-    }
-    // Original WAV löschen
-    if (!keepWav) {
-        std::remove(outputSoundPath.c_str());
-        cout << "Intermediate WAV file deleted." << endl;
-    }
-    cout << "Converted audio saved to " << finalOutputPath.string() << endl;
-    return true;
-}
-
-enum class StereoNorm {
-    LINKED, // beide Kanäle gemeinsam (empfohlen)
-    INDEPENDENT // L und R getrennt
-};
 
 
 // --- Main ---
@@ -170,6 +90,12 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
+    // konvert string to lower
+    auto toLower = [](std::string s) -> std::string {
+        ranges::transform(s, s.begin(), ::tolower);
+        return s;
+    };
+
     // --- Pfade ---
     const string inputImagePath = parsed["input"].as<std::string>(); // Path to input image
     if (inputImagePath.empty()) throw std::runtime_error("Input path cannot be empty");
@@ -182,7 +108,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Pfade vorbereiten
-    const std::string outputFormat = parsed["format"].as<std::string>(); // z.B. "mp3", "flac", "wav"
+    const std::string outputFormat = toLower(parsed["format"].as<std::string>()); // z.B. "mp3", "flac", "wav"
     std::filesystem::path wavPath(outputSoundPath);
     std::filesystem::path finalOutputPath = wavPath; // default WAV
 
@@ -207,11 +133,6 @@ int main(int argc, char *argv[]) {
     params.maxFreq = parsed["max-freq"].as<float>();
     params.durationPerColumn = parsed["duration-per-column"].as<float>();
     params.gamma = parsed["gamma"].as<float>();
-
-    auto toLower = [](std::string s) -> std::string {
-        ranges::transform(s, s.begin(), ::tolower);
-        return s;
-    };
 
     // ReSharper disable once CppTooWideScopeInitStatement
     const std::string scaleStr = toLower(parsed["scale"].as<std::string>());
@@ -251,9 +172,6 @@ int main(int argc, char *argv[]) {
         totalSamples += frame.width * colSamples;        // Samples für diesen Frame hinzufügen
     }
 
-    clog << "Generating audio: " << totalSamples << " samples at " << params.samplerate << " Hz" << endl;
-    clog << "This may take a while depending on image/gif size and number of frames..." << endl;
-
     // Reserve finalAudio
     bool useStereo = parsed.count("stereo") > 0; // Ob Stereo verwendet werden soll oder Mono
 
@@ -266,6 +184,9 @@ int main(int argc, char *argv[]) {
     } else {
         finalAudio.resize(totalSamples, 0.0f);
     }
+
+    clog << "Generating audio: " << totalSamples << " samples at " << params.samplerate << " Hz" << endl;
+    clog << "This may take a while depending on image/gif size and number of frames..." << endl;
 
     // Jeden Frame durchgehen
     for (size_t f = 0; f < img.frames.size(); ++f) {
@@ -336,6 +257,7 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+
     clog << "Audio generation completed." << endl;
     clog << "Post-processing audio..." << endl;
 
@@ -417,6 +339,7 @@ int main(int argc, char *argv[]) {
             cerr << "Wav file is kept." << endl;
             return 1;
         }
+        clog << "File conversion completed Successfully." << endl;
     }
 
     clog << "Good bye! :3" << endl;

@@ -150,4 +150,14 @@ struct AudioParams {
     float gamma{1.0f};
     ScaleType scaleType = ScaleType::LOGARITHMIC;
 };
+
+/**
+ * @brief Stereo Normalization modes
+ * @author Lupo
+ */
+enum class StereoNorm {
+    LINKED, // beide Kanäle gemeinsam (empfohlen)
+    INDEPENDENT // L und R getrennt
+};
+
 #endif //IMG_TO_SPECTROGRAM_STRUCTS_H
