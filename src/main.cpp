@@ -12,116 +12,12 @@
 #include <AudioFile.h>
 #include <cxxopts.hpp>
 
-// Für meine structs
+// Für meine eigenen sachen
 #include <structs.hpp>
+#include <ungrouped_utility_funktions.hpp>
 using namespace std;
 
 // --- Funktionen ---
-
-/**
- * @brief macht einen Systemcall um zu prüfen ob ffmpeg im PATH ist
- * @details macht einen Systemcall "ffmpeg -version" und prüft den Rückgabewert.
-  *         stdout und stderr werden verworfen.
-  *         Wenn der Rückgabewert 0 ist, wurde ffmpeg gefunden.
- * @details Dies ist notwendig, um Audio in andere Formate als WAV zu konvertieren.
- * @details ffmpeg muss installiert und im PATH sein.
-  *          Andernfalls wird nur WAV ausgegeben.
-  *@details  Siehe https://ffmpeg.org/download.html für Installationsanweisungen.
-  *          Unter Windows kann ffmpeg von https://ffmpeg.org/download.html#build-windows heruntergeladen werden.
-  *          Der entpackte Ordner muss dann zum PATH hinzugefügt werden.
-  *          Alternativ kann ffmpeg auch in das gleiche Verzeichnis wie die ausführbare Datei kopiert werden.
- * @return true, wenn ffmpeg im PATH gefunden wurde
- * @author Lupo
- */
-[[nodiscard]] inline bool ffmpegExists() {
-#ifdef _WIN32
-    return std::system("ffmpeg -version > NUL 2>&1") == 0;
-#else
-    return std::system("ffmpeg -version > /dev/null 2>&1") == 0;
-#endif
-}
-
-/**
- * @brief Konvertiert eine WAV Datei mit ffmpeg in ein anderes Format
- * @details Konvertiert die Datei wavPath in targetPath mit ffmpeg.
- *            stdout und stderr werden in eine temporäre Log-Datei umgeleitet.
- *            Im Fehlerfall wird der Inhalt der Log-Datei ausgegeben.
- *            Die Log-Datei wird im Erfolgsfall gelöscht.
- *            Dies geschieht, um das Konsolenfenster sauber zu halten. :3
- * @param wavPath the input wav file path
- * @param targetPath the output file path
- * @return true if conversion was successful false otherwise
- * @author Lupo
- */
-bool convertWithFFmpeg(const std::string &wavPath, const std::string &targetPath) {
-    // Temporäre Log-Datei
-    std::string logFile = "ffmpeg.log";
-
-    // ffmpeg-Aufruf: stdout und stderr in logFile umleiten
-    std::string cmd = "ffmpeg -y -i \"" + wavPath + "\" \"" + targetPath + "\" > \"" + logFile + "\" 2>&1";
-    const int ret = std::system(cmd.c_str());
-
-    if (ret != 0) {
-        // Im Fehlerfall Log-Datei lesen und ausgeben
-        const std::ifstream log(logFile);
-        if (log.is_open()) {
-            std::stringstream buffer;
-            buffer << log.rdbuf();
-            std::cerr << "ffmpeg failed:\n" << buffer.str() << std::endl;
-        } else { // Für den Fall, dass die log datei nicht erstellt werden oder gelesen werden konnte, dass sollte aber eigentlich nie passieren.
-            std::cerr << "ffmpeg failed and log file could not be opened." << std::endl;
-        }
-        return false;
-    }
-
-    // Erfolg → Log löschen
-    std::remove(logFile.c_str());
-    return true;
-}
-
-/**
- * @brief Wandelt Hz in Mel-Frequenz um
- * @param f die Frequenz in Hz
- * @return die Mel-Frequenz
- * @author Lupo
- */
-inline float hzToMel(const float f) {
-    return 2595.0f * std::log10(1.0f + f / 700.0f);
-}
-
-/**
- * @brief Wandelt Mel-Frequenz in Hz um
- * @param m die Mel-Frequenz
- * @return die Frequenz in Hz
- * @author Lupo
- */
-inline float melToHz(const float m) {
-    return 700.0f * (std::pow(10.0f, m / 2595.0f) - 1.0f);
-}
-
-/**
- * @brief Wandelt Hz in Bark-Frequenz um
- * @param f die Frequenz in Hz
- * @return die Bark-Frequenz
- * @author Lupo
- */
-inline float hzToBark(const float f) {
-    return 13.0f * std::atan(0.00076f * f)
-         + 3.5f * std::atan(std::pow(f / 7500.0f, 2.0f));
-}
-
-/**
- * @brief Wandelt Bark-Frequenz in Hz um
- * @param z die Bark-Frequenz
- * @return die Frequenz in Hz
- * @author Lupo
- */
-inline float barkToHz(const float z) {
-    // numerische Inversion (Newton-Raphson wäre overkill)
-    // → wir benutzen eine gute Näherung
-    return 600.0f * std::sinh(z / 6.0f);
-}
-
 
 /**
  * @brief Berechnet die Frequenz für eine gegebene y-Position im Bild
@@ -164,6 +60,11 @@ float freqForY(const int y, const int height, const AudioParams& params) {
     return params.minFreq; // unreachable, aber Compiler happy
 }
 
+enum class StereoNorm {
+    LINKED,     // beide Kanäle gemeinsam (empfohlen)
+    INDEPENDENT // L und R getrennt
+};
+
 
 // --- Main ---
 int main(int argc, char *argv[]) {
@@ -180,7 +81,8 @@ int main(int argc, char *argv[]) {
             ("duration-per-column", "Duration per image column in seconds", cxxopts::value<float>()->default_value("0.01"))
             ("scale", "The scale type", cxxopts::value<std::string>()->default_value("logarithmic"))
             ("gamma", "Gamma correction", cxxopts::value<float>()->default_value("1.0"))
-            ("norm", "Normalization: peak|rms", cxxopts::value<std::string>()->default_value("peak"));
+            ("norm", "Normalization: peak|rms", cxxopts::value<std::string>()->default_value("peak"))
+            ("stereo", "Enable stereo output (default is mono)");
 
     options.add_options("Output options")
         ("f,format", "Convert WAV to another format using ffmpeg (e.g., mp3, flac)", cxxopts::value<std::string>()->default_value("wav"))
@@ -272,10 +174,22 @@ int main(int argc, char *argv[]) {
         totalSamples += frame.width * colSamples;
     }
 
-    // Reserve finalAudio
     clog << "Generating audio: " << totalSamples << " samples at " << params.samplerate << " Hz" << endl;
     clog << "This may take a while depending on image/gif size and number of frames..." << endl;
-    vector<float> finalAudio(totalSamples, 0.0f);
+
+    // Reserve finalAudio
+    bool useStereo = parsed.count("stereo") > 0;
+
+    vector<float> finalAudio;
+    vector<float> finalAudioL, finalAudioR;
+
+    if (useStereo) {
+        finalAudioL.resize(totalSamples, 0.0f);
+        finalAudioR.resize(totalSamples, 0.0f);
+    } else {
+        finalAudio.resize(totalSamples, 0.0f);
+    }
+
     for (size_t f = 0; f < img.frames.size(); ++f) {
         auto &frame = img.frames[f];
         int offset = frameOffsets[f];
@@ -296,17 +210,29 @@ int main(int argc, char *argv[]) {
 
         // Spalten parallel berechnen
         #pragma omp parallel for schedule(static) default(none) \
-            shared(finalAudio, frame, frequencies, hann, offset, colSamples,params, phaseInc)
+        shared(finalAudio, finalAudioL, finalAudioR, frame, frequencies, hann, offset, colSamples, params, phaseInc, useStereo)
         for (int x = 0; x < frame.width; ++x) {
-            vector<float> phase(frame.height, 0.0f); // Phase pro Frequenz
-            vector<float> amp(frame.height); // Amplitude pro Frequenz
-            // Amplitude vorberechnen
+
+            float pan = (frame.width > 1)
+                ? 2.0f * (static_cast<float>(x) / (frame.width - 1)) - 1.0f
+                : 0.0f;
+
+            float panL = 1.0f, panR = 1.0f; // Default für Mono
+            if (useStereo) {
+                panL = std::sqrt(0.5f * (1.0f - pan));
+                panR = std::sqrt(0.5f * (1.0f + pan));
+            }
+
+            vector<float> phase(frame.height);
+            vector<float> amp(frame.height);
+
             for (int y = 0; y < frame.height; ++y) {
                 float c = frame.pixels[y * frame.width + x] - 0.5f;
                 float sign = (c >= 0.0f) ? 1.0f : -1.0f;
                 amp[y] = sign * std::pow(std::abs(c), params.gamma);
+                phase[y] = phaseInc[y] * x * colSamples; // optional, aber gut
             }
-            // Samples der Spalte berechnen
+
             for (int i = 0; i < colSamples; ++i) {
                 float sample = 0.0f;
                 for (int y = 0; y < frame.height; ++y) {
@@ -314,34 +240,73 @@ int main(int argc, char *argv[]) {
                     phase[y] += phaseInc[y];
                 }
                 sample *= hann[i];
-                finalAudio[offset + x * colSamples + i] += sample;
+
+                int idx = offset + x * colSamples + i;
+                if (useStereo) {
+                    finalAudioL[idx] += sample * panL;
+                    finalAudioR[idx] += sample * panR;
+                } else {
+                    finalAudio[idx] += sample; // Mono
+                }
             }
         }
     }
     clog << "Audio generation completed." << endl;
     clog << "Post-processing audio..." << endl;
+
+    // --- DC entfernen ---
+    if (useStereo) {
+        auto removeDC = [](vector<float>& buf) -> void {
+            const float mean = std::accumulate(buf.begin(), buf.end(), 0.0f) / buf.size();
+            for (auto& s : buf) s -= mean;
+        };
+        removeDC(finalAudioL);
+        removeDC(finalAudioR);
+    } else {
+        float mean = std::accumulate(finalAudio.begin(), finalAudio.end(), 0.0f) / finalAudio.size();
+        for (auto& s : finalAudio) s -= mean;
+    }
+
     // --- Normalisieren ---
-
-    float mean = std::accumulate(finalAudio.begin(), finalAudio.end(), 0.0f)
-                 / static_cast<float>(finalAudio.size());
-
-    for (auto &s: finalAudio)
-        s -= mean;
-
-    // Normalisieren
-    if (norm == NormType::RMS) {
-        float rms = 0.0f;
-        for (float s : finalAudio) rms += s * s;
-        rms = std::sqrt(rms / static_cast<float>(finalAudio.size()));
-
-        float target = 0.1f;
-        float gain = target / std::max(rms, 1e-6f);
-        for (float& s : finalAudio) s *= gain;
-    } else if (norm == NormType::PEAK) { // Peak-Normalisierung
-        float maxAmp = 0.0f;
-        for (const float v: finalAudio) maxAmp = std::max(maxAmp, std::abs(v));
-        if (maxAmp > 0.0f) {
-            for (float &v: finalAudio) v /= maxAmp;
+    if (useStereo) {
+        if (norm == NormType::RMS) {
+            double sumSq = 0.0;
+            for (size_t i = 0; i < finalAudioL.size(); ++i) {
+                sumSq += finalAudioL[i] * finalAudioL[i];
+                sumSq += finalAudioR[i] * finalAudioR[i];
+            }
+            float rms = std::sqrt(sumSq / (2.0 * finalAudioL.size()));
+            float gain = 0.1f / std::max(rms, 1e-6f);
+            for (size_t i = 0; i < finalAudioL.size(); ++i) {
+                finalAudioL[i] *= gain;
+                finalAudioR[i] *= gain;
+            }
+        } else { // PEAK
+            float maxAmp = 0.0f;
+            for (size_t i = 0; i < finalAudioL.size(); ++i)
+                maxAmp = std::max({maxAmp, std::abs(finalAudioL[i]), std::abs(finalAudioR[i])});
+            if (maxAmp > 0.0f) {
+                float inv = 1.0f / maxAmp;
+                for (size_t i = 0; i < finalAudioL.size(); ++i) {
+                    finalAudioL[i] *= inv;
+                    finalAudioR[i] *= inv;
+                }
+            }
+        }
+    } else {
+        if (norm == NormType::RMS) {
+            double sumSq = 0.0;
+            for (float s : finalAudio) sumSq += s * s;
+            float rms = std::sqrt(sumSq / finalAudio.size());
+            float gain = 0.1f / std::max(rms, 1e-6f);
+            for (float &s : finalAudio) s *= gain;
+        } else { // PEAK
+            float maxAmp = *ranges::max_element(finalAudio, [](const float a, const float b) -> bool
+                                                { return std::abs(a)<std::abs(b); });
+            if (maxAmp > 0.0f) {
+                float inv = 1.0f / maxAmp;
+                for (auto &s : finalAudio) s *= inv;
+            }
         }
     }
 
@@ -351,11 +316,20 @@ int main(int argc, char *argv[]) {
 
     // --- WAV speichern ---
     AudioFile<float> wav;
-    wav.setNumChannels(1);
-    wav.setSampleRate(params.samplerate);
-    wav.setNumSamplesPerChannel(static_cast<int>(finalAudio.size()));
-    for (int i = 0; i < finalAudio.size(); ++i)
-        wav.samples[0][i] = finalAudio[i];
+    if (useStereo) {
+        wav.setNumChannels(2);
+        wav.setNumSamplesPerChannel(finalAudioL.size());
+        for (size_t i = 0; i < finalAudioL.size(); ++i) {
+            wav.samples[0][i] = finalAudioL[i];
+            wav.samples[1][i] = finalAudioR[i];
+        }
+    } else {
+        wav.setNumChannels(1);
+        wav.setNumSamplesPerChannel(finalAudio.size());
+        for (size_t i = 0; i < finalAudio.size(); ++i)
+            wav.samples[0][i] = finalAudio[i];
+    }
+
 
     // Falls ein anderes Format gewünscht ist, erst als WAV speichern und dann konvertieren
     wav.save(outputSoundPath);
