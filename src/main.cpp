@@ -214,7 +214,7 @@ int main(int argc, char *argv[]) {
 
         // Spalten parallel berechnen
         #pragma omp parallel for schedule(static) default(none) shared(finalAudio, finalAudioL, finalAudioR, frame,\
-            frequencies, hann, offset, colSamples, params, phaseInc, useStereo)
+            frequencies, hann, offset, colSamples, params, phaseInc, useStereo, img)
         // Jede Spalte durchgehen
         for (int x = 0; x < frame.width; ++x) {
             // Panning berechnen
@@ -234,11 +234,21 @@ int main(int argc, char *argv[]) {
 
             // Amplituden und Startphasen für jede Zeile berechnen
             for (int y = 0; y < frame.height; ++y) {
-                float c = frame.pixels[y * frame.width + x] - 0.5f;
-                float sign = (c >= 0.0f) ? 1.0f : -1.0f;
-                amp[y] = sign * std::pow(std::abs(c), params.gamma);
-                phase[y] = phaseInc[y] * static_cast<float>(x) * static_cast<float>(colSamples); // optional, aber gut
+                float c = frame.pixels[y * frame.width + x]; // Pixelwert an (x,y)
+                if (params.scaleType == AudioParams::ScaleType::LINEAR || img.frames.size() > 1 /* GIF erkennen: mehrere Frames*/) {
+                    // alte Sign-Pow Logik für LINEAR und GIFs
+                    c -= 0.5f;
+                    float sign = (c >= 0.0f) ? 1.0f : -1.0f;
+                    amp[y] = sign * std::pow(std::abs(c), params.gamma);
+                } else {
+                    // LOG / MEL / BARK für JPGs
+                    c = std::max(c, 1e-4f);
+                    amp[y] = std::pow(c, params.gamma);
+                }
+
+                phase[y] = phaseInc[y] * static_cast<float>(x) * static_cast<float>(colSamples);
             }
+
 
             // Samples für diese Spalte generieren
             for (int i = 0; i < colSamples; ++i) {
