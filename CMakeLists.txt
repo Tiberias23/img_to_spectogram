@@ -17,7 +17,15 @@ target_link_libraries(img_to_spectrogram PRIVATE OpenMP::OpenMP_CXX)
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
     message("Setting optimization flags for Release build :3")
-    target_compile_options(img_to_spectrogram PRIVATE $<$<CONFIG:Release>:-O3 -march=native -ffast-math>)
+    target_compile_options(img_to_spectrogram PRIVATE $<$<CONFIG:Release>:-O3 -march=native -ffast-math -fopenmp>)
 else ()
-    message("No optimization flags set for Debug build :3")
+    message("a few optimisation flags set for Debug build for better comparison :3")
+    # Optimierungen, aber Debug-Symbole behalten
+    target_compile_options(img_to_spectrogram PRIVATE
+            -O2                 # Optimierungen, aber nicht so aggressiv wie O3
+            -g                  # Debug-Symbole
+            -march=native
+            -ffast-math
+            -fopenmp
+    )
 endif()
