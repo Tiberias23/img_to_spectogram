@@ -49,7 +49,7 @@ using namespace std;
                 wav.samples[0][i] = finalAudio[i];
         }
 
-        if (!wav.save(outputSoundPath)) {
+        if (!wav.save(outputSoundPath, AudioFileFormat::Wave)) {
             throw std::runtime_error("Failed to save file");
         }
         std::cout << "Audio saved to " << outputSoundPath << std::endl;
@@ -193,11 +193,24 @@ int main(int argc, char *argv[]) {
     clog << "Generating audio: " << totalSamples << " samples at " << params.samplerate << " Hz" << endl;
     clog << "This may take a while depending on image/gif size and number of frames..." << endl;
 
+    constexpr int LUT_SIZE = 4096;
+    static vector<float> gammaLUT;
+    static float lastGamma = -1.0f;
+
+    if (gammaLUT.empty() || lastGamma != params.gamma) {
+        gammaLUT.resize(LUT_SIZE);
+        for (int i = 0; i < LUT_SIZE; ++i) {
+            float v = static_cast<float>(i) / (LUT_SIZE - 1);
+            gammaLUT[i] = std::pow(v, params.gamma);
+        }
+        lastGamma = params.gamma;
+    }
+
+
     // TODO: Mach den scheiß schneller
     // TODO: eventuell was gegen diesen mini teil bei jedem frame links unten machen
     // Jeden Frame durchgehen
     for (size_t f = 0; f < img.frames.size(); ++f) {
-        cout << "Processing frame " << f + 1 << " / " << img.frames.size() << endl;
         auto &frame = img.frames[f];            // aktueller Frame
         int offset = frameOffsets[f];           // Frequenzen und Phaseninkremente für jede Zeile vorberechnen
         vector<float> frequencies(frame.height);// Frequenzen für jede Zeile
@@ -207,6 +220,13 @@ int main(int argc, char *argv[]) {
         for (int y = 0; y < frame.height; ++y) {
             frequencies[y] = freqForY(y, frame.height, params); // Frequenz für diese Zeile
             phaseInc[y] = M_PI * 2.0f * frequencies[y] / params.samplerate; // Phaseninkrement pro Sample
+        }
+
+        vector<float> sinInc(frame.height);
+        vector<float> cosInc(frame.height);
+        for (int y = 0; y < frame.height; ++y) {
+            sinInc[y] = sinf(phaseInc[y]);
+            cosInc[y] = cosf(phaseInc[y]);
         }
 
         // Jede Spalte bekommt mindestens 256 Samples für scharfes Spektrogramm
@@ -221,58 +241,75 @@ int main(int argc, char *argv[]) {
         const bool useWindow = img.frames.size() > 1; // Check ob Windowing verwendet werden soll (bei GIFs ja, bei Einzelbildern nein)
 
         // Spalten parallel berechnen
-        #pragma omp parallel for schedule(static) default(none) shared(finalAudio, finalAudioL, finalAudioR, frame,\
-            frequencies, hann, offset, colSamples, params, phaseInc, useStereo, img, useWindow)
-        // Jede Spalte durchgehen
-        for (int x = 0; x < frame.width; ++x) {
-            // Panning berechnen
-            float pan = (frame.width > 1)
-                            ? 2.0f * (static_cast<float>(x) / static_cast<float>(frame.width - 1)) - 1.0f
-                            : 0.0f;
-
-            // Equal Power Panning
-            float panL = 1.0f, panR = 1.0f; // Default für Mono
-            if (useStereo) {
-                panL = std::sqrt(0.5f * (1.0f - pan));
-                panR = std::sqrt(0.5f * (1.0f + pan));
-            }
-
-            vector<float> phase(frame.height);
+#pragma omp parallel default(none) \
+        shared(finalAudio, finalAudioL, finalAudioR, frame, frequencies, hann, offset, colSamples, params, phaseInc, useStereo, img, useWindow, sinInc, cosInc, gammaLUT)
+        // ReSharper disable once CppDFAUnreadVariable
+        {
             vector<float> amp(frame.height);
+            vector<float> sinv(frame.height);
+            vector<float> cosv(frame.height);
 
-            // Amplituden und Startphasen für jede Zeile berechnen
-            for (int y = 0; y < frame.height; ++y) {
-                float c = frame.pixels[y * frame.width + x]; // Pixelwert an (x,y)
-                if (params.scaleType == AudioParams::ScaleType::LINEAR || img.frames.size() > 1 /* GIF erkennen: mehrere Frames*/) {
-                    // alte Sign-Pow Logik für LINEAR und GIFs
-                    c -= 0.5f;
-                    float sign = (c >= 0.0f) ? 1.0f : -1.0f;
-                    amp[y] = sign * std::pow(std::abs(c), params.gamma);
-                } else {
-                    // LOG / MEL / BARK für JPGs
-                    c = std::max(c, 1e-4f);
-                    amp[y] = std::pow(c, params.gamma);
+            // Jede Spalte durchgehen
+            #pragma omp for schedule(static, 16)
+            for (int x = 0; x < frame.width; ++x) {
+                // Panning berechnen
+                float pan;
+                if ((frame.width > 1))
+                    pan = 2.0f * (static_cast<float>(x) / static_cast<float>(frame.width - 1)) - 1.0f;
+                else
+                    pan = 0.0f;
+
+                // Equal Power Panning
+                float panL = 1.0f, panR = 1.0f; // Default für Mono
+                if (useStereo) {
+                    panL = std::sqrt(0.5f * (1.0f - pan));
+                    panR = std::sqrt(0.5f * (1.0f + pan));
                 }
 
-                phase[y] = phaseInc[y] * static_cast<float>(x) * static_cast<float>(colSamples);
-            }
+                // Amplituden und Startphasen für jede Zeile berechnen
+                for (int y = 0; y < frame.height; ++y) {
+                    float c = frame.pixels[y * frame.width + x]; // Pixelwert an (x,y)
+                    if (params.scaleType == AudioParams::ScaleType::LINEAR || img.frames.size() > 1 /* GIF erkennen: mehrere Frames*/) {
+                        // alte Sign-Pow Logik für LINEAR und GIFs
+                        c -= 0.5f;
+                        float sign = (c >= 0.0f) ? 1.0f : -1.0f;
+                        float ac = std::abs(c);
+                        int li = std::min(static_cast<int>(ac * (LUT_SIZE - 1)), LUT_SIZE - 1);
+                        amp[y] = sign * gammaLUT[li];
+                    } else {
+                        // LOG / MEL / BARK für JPGs
+                        c = std::max(c, 1e-4f);
+                        amp[y] = std::pow(c, params.gamma);
+                    }
 
+                    float startPhase = phaseInc[y] * static_cast<float>(x) * static_cast<float>(colSamples);
+                    sinv[y] = sinf(startPhase);
+                    cosv[y] = cosf(startPhase);
 
-            // Samples für diese Spalte generieren
-            for (int i = 0; i < colSamples; ++i) {
-                float sample = 0.0f; // Sample für diese Position
-                for (int y = 0; y < frame.height; ++y) { // Alle Zeilen addieren
-                    sample += amp[y] * sinf(phase[y]);
-                    phase[y] += phaseInc[y];
                 }
-                if (useWindow) sample *= hann[i]; // Hann-Window anwenden
 
-                int idx = offset + x * colSamples + i; // Index im finalen Audio
-                if (useStereo) { // Stereo
-                    finalAudioL[idx] += sample * panL;
-                    finalAudioR[idx] += sample * panR;
-                } else { // Mono
-                    finalAudio[idx] += sample; // Mono
+
+                // Samples für diese Spalte generieren
+                const int colSamplesFrame = colSamples; // Fix für diese Schleife
+                for (int i = 0; i < colSamplesFrame; ++i) {
+                    float sample = 0.0f; // Sample für diese Position
+                    for (int y = 0; y < frame.height; ++y) { // Alle Zeilen addieren
+                        sample += amp[y] * sinv[y];
+
+                        float s = sinv[y];
+                        float c = cosv[y];
+                        sinv[y] = s * cosInc[y] + c * sinInc[y];
+                        cosv[y] = c * cosInc[y] - s * sinInc[y];
+                    }
+                    if (useWindow) sample *= hann[i]; // Hann-Window anwenden
+
+                    int idx = offset + x * colSamples + i; // Index im finalen Audio
+                    if (useStereo) { // Stereo
+                        finalAudioL[idx] += sample * panL;
+                        finalAudioR[idx] += sample * panR;
+                    } else { // Mono
+                        finalAudio[idx] += sample; // Mono
+                    }
                 }
             }
         }
