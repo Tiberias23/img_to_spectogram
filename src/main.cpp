@@ -4,16 +4,17 @@
 #include <string>
 #include <algorithm>
 #include <numeric>
+#include <random>
 
 // Bibliotheken einbinden
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#include <AudioFile.h>
+#include <AudioFile.h> // TODO: evtl. selber schreiben, da die lib viel bietet aber wir nur wav speichern brauchen
 #include <cxxopts.hpp>
 
 // Für meine eigenen sachen
-#include <structs.hpp>
-#include <ungrouped_utility_funktions.hpp>
+#include <structs.hpp> // für Image, ImageFrame, AudioParams, NormType und StereoNorm
+#include <ungrouped_utility_funktions.hpp> // für freqForY, convert_file, ffmpegExists, convertWithFFmpeg, hzToMel, melToHz, hzToBark, barkToHz
 using namespace std;
 
 
@@ -24,14 +25,16 @@ using namespace std;
  * @param finalAudio das finale Audio (Mono)
  * @param finalAudioL das finale Audio links (Stereo)
  * @param finalAudioR das finale Audio rechts (Stereo)
+ * @param samplerate die rate der samples
  * @return true bei Erfolg, false bei Fehler
  * @author Lupo
  */
 [[nodiscard]] inline bool save_wav_file(const bool useStereo, const std::string &outputSoundPath,
-    const std::vector<float> &finalAudio, const std::vector<float> &finalAudioL, const std::vector<float> &finalAudioR) {
+    const std::vector<float> &finalAudio, const std::vector<float> &finalAudioL, const std::vector<float> &finalAudioR, const int samplerate) {
     try {
         // --- WAV speichern ---
         AudioFile<float> wav;
+        wav.setSampleRate(samplerate);
         if (useStereo) {
             wav.setNumChannels(2);
             wav.setNumSamplesPerChannel(static_cast<int>(finalAudioL.size()));
@@ -46,9 +49,9 @@ using namespace std;
                 wav.samples[0][i] = finalAudio[i];
         }
 
-
-        // Falls ein anderes Format gewünscht ist, erst als WAV speichern und dann konvertieren
-        wav.save(outputSoundPath);
+        if (!wav.save(outputSoundPath)) {
+            throw std::runtime_error("Failed to save file");
+        }
         std::cout << "Audio saved to " << outputSoundPath << std::endl;
         return true;
     } catch (std::exception &e) {
@@ -190,8 +193,11 @@ int main(int argc, char *argv[]) {
     clog << "Generating audio: " << totalSamples << " samples at " << params.samplerate << " Hz" << endl;
     clog << "This may take a while depending on image/gif size and number of frames..." << endl;
 
+    // TODO: Mach den scheiß schneller
+    // TODO: eventuell was gegen diesen mini teil bei jedem frame links unten machen
     // Jeden Frame durchgehen
     for (size_t f = 0; f < img.frames.size(); ++f) {
+        cout << "Processing frame " << f + 1 << " / " << img.frames.size() << endl;
         auto &frame = img.frames[f];            // aktueller Frame
         int offset = frameOffsets[f];           // Frequenzen und Phaseninkremente für jede Zeile vorberechnen
         vector<float> frequencies(frame.height);// Frequenzen für jede Zeile
@@ -212,9 +218,11 @@ int main(int argc, char *argv[]) {
             hann[i] = 0.5f * static_cast<float>(1.0f - cos(2.0f * M_PI * i / (colSamples - 1)));
         }
 
+        const bool useWindow = img.frames.size() > 1; // Check ob Windowing verwendet werden soll (bei GIFs ja, bei Einzelbildern nein)
+
         // Spalten parallel berechnen
         #pragma omp parallel for schedule(static) default(none) shared(finalAudio, finalAudioL, finalAudioR, frame,\
-            frequencies, hann, offset, colSamples, params, phaseInc, useStereo, img)
+            frequencies, hann, offset, colSamples, params, phaseInc, useStereo, img, useWindow)
         // Jede Spalte durchgehen
         for (int x = 0; x < frame.width; ++x) {
             // Panning berechnen
@@ -257,7 +265,7 @@ int main(int argc, char *argv[]) {
                     sample += amp[y] * sinf(phase[y]);
                     phase[y] += phaseInc[y];
                 }
-                sample *= hann[i]; // Hann-Window anwenden
+                if (useWindow) sample *= hann[i]; // Hann-Window anwenden
 
                 int idx = offset + x * colSamples + i; // Index im finalen Audio
                 if (useStereo) { // Stereo
@@ -343,7 +351,7 @@ int main(int argc, char *argv[]) {
 
     // --- WAV speichern ---
     // WAV speichern
-    if (!save_wav_file(useStereo, wavPath.string(), finalAudio, finalAudioL, finalAudioR)) {
+    if (!save_wav_file(useStereo, wavPath.string(), finalAudio, finalAudioL, finalAudioR, params.samplerate)) {
         cerr << "Could not save WAV file to " << wavPath.string() << endl;
         return 1;
     }
