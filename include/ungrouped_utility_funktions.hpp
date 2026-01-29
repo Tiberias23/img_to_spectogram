@@ -5,18 +5,12 @@
 #ifndef IMG_TO_SPECTROGRAM_UNGROUPED_UTILITY_FUNKTIONS_HPP
 #define IMG_TO_SPECTROGRAM_UNGROUPED_UTILITY_FUNKTIONS_HPP
 /**
- * @brief macht einen Systemcall um zu prüfen ob ffmpeg im PATH ist
- * @details macht einen Systemcall "ffmpeg -version" und prüft den Rückgabewert.
-  *         stdout und stderr werden verworfen.
-  *         Wenn der Rückgabewert 0 ist, wurde ffmpeg gefunden.
- * @details Dies ist notwendig, um Audio in andere Formate als WAV zu konvertieren.
- * @details ffmpeg muss installiert und im PATH sein.
-  *          Andernfalls wird nur WAV ausgegeben.
-  *@details  Siehe https://ffmpeg.org/download.html für Installationsanweisungen.
-  *          Unter Windows kann ffmpeg von https://ffmpeg.org/download.html#build-windows heruntergeladen werden.
-  *          Der entpackte Ordner muss dann zum PATH hinzugefügt werden.
-  *          Alternativ kann ffmpeg auch in das gleiche Verzeichnis wie die ausführbare Datei kopiert werden.
- * @return true, wenn ffmpeg im PATH gefunden wurde
+ * @brief makes a Syscall to check if ffmpeg is installed
+ * @details uses "ffmpeg -version" command to check if ffmpeg is installed
+  *          and available in PATH.
+  *          Redirects output to null device to keep console clean.
+  *          Works on Windows and Unix-like systems.
+ * @return true if ffmpeg is found in PATH false otherwise
  * @author Lupo
  */
 [[nodiscard]] inline bool ffmpegExists() {
@@ -28,47 +22,47 @@
 }
 
 /**
- * @brief Konvertiert eine WAV Datei mit ffmpeg in ein anderes Format
- * @details Konvertiert die Datei wavPath in targetPath mit ffmpeg.
- *            stdout und stderr werden in eine temporäre Log-Datei umgeleitet.
- *            Im Fehlerfall wird der Inhalt der Log-Datei ausgegeben.
- *            Die Log-Datei wird im Erfolgsfall gelöscht.
- *            Dies geschieht, um das Konsolenfenster sauber zu halten. :3
+ * @brief Convert a wav file to another format using ffmpeg
+ * @details Converts a wav file to another format using ffmpeg.
+ *            stdout and stderr are diverted to a log file.
+ *            In case of failure the log file is read and printed to the console.
+ *            The Logfile is removed if everything went well.
+ *            this happens to have a clean console. :3
  * @param wavPath the input wav file path
  * @param targetPath the output file path
  * @return true if conversion was successful false otherwise
  * @author Lupo
  */
 inline bool convertWithFFmpeg(const std::string &wavPath, const std::string &targetPath) {
-    // Temporäre Log-Datei
+    // Temporary log file for ffmpeg output
     std::string logFile = "ffmpeg.log";
 
-    // ffmpeg-Aufruf: stdout und stderr in logFile umleiten
+    // ffmpeg command with redirected output to a log file
     std::string cmd = "ffmpeg -y -i \"" + wavPath + "\" \"" + targetPath + "\" > \"" + logFile + "\" 2>&1";
     const int ret = std::system(cmd.c_str());
 
     if (ret != 0) {
-        // Im Fehlerfall Log-Datei lesen und ausgeben
+        // if ffmpeg failed → read and print log file
         const std::ifstream log(logFile);
         if (log.is_open()) {
             std::stringstream buffer;
             buffer << log.rdbuf();
             std::cerr << "ffmpeg failed:\n" << buffer.str() << std::endl;
-        } else { // Für den Fall, dass die log datei nicht erstellt werden oder gelesen werden konnte, dass sollte aber eigentlich nie passieren.
+        } else { // If ffmpeg failed and the log file could not be opened should never happen
             std::cerr << "ffmpeg failed and log file could not be opened." << std::endl;
         }
         return false;
     }
 
-    // Erfolg → Log löschen
+    // Success → Remove log file
     std::remove(logFile.c_str());
     return true;
 }
 
 /**
- * @brief Wandelt Hz in Mel-Frequenz um
- * @param f die Frequenz in Hz
- * @return die Mel-Frequenz
+ * @brief Convert Hz to Mel-Frequenz
+ * @param f the Frequency in Hz
+ * @return the Mel-Frequency
  * @author Lupo
  */
 inline float hzToMel(const float f) {
@@ -76,9 +70,9 @@ inline float hzToMel(const float f) {
 }
 
 /**
- * @brief Wandelt Mel-Frequenz in Hz um
- * @param m die Mel-Frequenz
- * @return die Frequenz in Hz
+ * @brief convert Mel-Frequenz in Hz
+ * @param m the Mel-Frequency
+ * @return the Frequency in Hz
  * @author Lupo
  */
 inline float melToHz(const float m) {
@@ -86,9 +80,9 @@ inline float melToHz(const float m) {
 }
 
 /**
- * @brief Wandelt Hz in Bark-Frequenz um
- * @param f die Frequenz in Hz
- * @return die Bark-Frequenz
+ * @brief Convert Hz to Bark-Frequenz
+ * @param f the Frequency in Hz
+ * @return the Bark-Frequency
  * @author Lupo
  */
 inline float hzToBark(const float f) {
@@ -97,28 +91,28 @@ inline float hzToBark(const float f) {
 }
 
 /**
- * @brief Wandelt Bark-Frequenz in Hz um
- * @param z die Bark-Frequenz
- * @return die Frequenz in Hz
+ * @brief Convert Bark-Frequenz to Hz
+ * @param z the Bark-Frequency
+ * @return the Frequency in Hz
  * @author Lupo
  */
 inline float barkToHz(const float z) {
     // numerische Inversion (Newton-Raphson wäre overkill)
-    // → wir benutzen eine gute Näherung
+    // → we use approximation formula
     return 600.0f * std::sinh(z / 6.0f);
 }
 
 /**
- * @brief Konvertiert die WAV-Datei in ein anderes Format mit ffmpeg
- * @param outputFormat das gewünschte Ausgabeformat (z.B. "mp3", "flac")
- * @param outputSoundPath der Pfad zur WAV-Datei
- * @param keepWav ob die WAV-Datei behalten werden soll
- * @param finalOutputPath der Pfad zur finalen Ausgabedatei (standardmäßig "./" als Dummy-Parameter, der muss übergeben werden!!!)
- * @return true bei Erfolg, false bei Fehler
+ * @brief Converts a WAV file to another format using ffmpeg
+ * @param outputFormat the desired output format e.g. "mp3", "flac", "wav"
+ * @param outputSoundPath the path to the intermediate wav file
+ * @param keepWav whether to keep the intermediate wav file
+ * @param finalOutputPath the final output file path (has to be set if outputFormat is not "wav")
+ * @return true if conversion was successful false otherwise
  * @author Lupo
  */
 [[nodiscard]] inline bool convert_file(const std::string &outputFormat, const std::string &outputSoundPath, const bool keepWav,
-                                              const std::filesystem::path &finalOutputPath = "./" /*Dummy Parameter*/) {
+                                              const std::filesystem::path &finalOutputPath = "./" /*Dummy Default*/) {
     std::clog << "Converting WAV to " << outputFormat << " using ffmpeg..." << std::endl;
     if (!ffmpegExists()) {
         std::cerr << "ffmpeg is not installed or not found in PATH. Cannot convert to " << outputFormat << std::endl;
@@ -132,7 +126,7 @@ inline float barkToHz(const float z) {
         std::cerr << "See ffmpeg.log for details." << std::endl;
         return false;
     }
-    // Original WAV löschen
+    // Remove the intermediate WAV file if not needed
     if (!keepWav) {
         std::remove(outputSoundPath.c_str());
         std::cout << "Intermediate WAV file deleted." << std::endl;
@@ -142,19 +136,19 @@ inline float barkToHz(const float z) {
 }
 
 /**
- * @brief Berechnet die Frequenz für eine gegebene y-Position im Bild
- * @param y die y-Position (0 = unten, height-1 = oben)
- * @param height die Höhe des Bildes
- * @param params die Audio-Parameter
- * @return die Frequenz in Hz
+ * @brief Calculates the frequency for a given y position in the image
+  *        according to the selected scale type in AudioParams.
+ * @param y the y position in the image
+ * @param height the height of the image
+ * @param params the audio parameters
+ * @return the frequency in Hz for the given y position
  * @author Lupo
  */
 inline float freqForY(const int y, const int height, const AudioParams &params) {
-    if (height <= 1) // Vermeidung Division durch null
+    if (height <= 1) // Avoid division with zero
         return params.minFreq;
 
-    const float t = static_cast<float>(height - 1 - y) /
-                    static_cast<float>(height - 1);
+    const float t = static_cast<float>(height - 1 - y) / static_cast<float>(height - 1); // Normalized position (0 at bottom, 1 at top)
 
     switch (params.scaleType) {
         case AudioParams::ScaleType::LINEAR:
@@ -177,7 +171,7 @@ inline float freqForY(const int y, const int height, const AudioParams &params) 
             return barkToHz(bark);
         }
     }
-    return params.minFreq; // unreachable, aber Compiler happy
+    return params.minFreq; // unreachable, but the Compiler is happy
 }
 
 #endif //IMG_TO_SPECTROGRAM_UNGROUPED_UTILITY_FUNKTIONS_HPP
