@@ -11,7 +11,7 @@
 #include <fstream>
 
 /**
- * @brief Normalisierungs typen für Audio
+ * @brief Normalizing types
  * @author Lupo
  */
 enum class NormType { PEAK, RMS };
@@ -23,8 +23,8 @@ enum class NormType { PEAK, RMS };
 struct ImageFrame {
     int width{};
     int height{};
-    std::vector<float> pixels; // normalisierte Pixelwerte
-    std::vector<int> delays; // nur für GIF
+    std::vector<float> pixels; // Normalised pixel values [0.0 - 1.0]
+    std::vector<int> delays; // only for GIFs: delay per frame in 10ms units
 };
 
 /**
@@ -32,8 +32,8 @@ struct ImageFrame {
  * @author Lupo
  */
 struct Image {
-    int channels = 1; // Graustufen
-    std::vector<ImageFrame> frames;
+    int channels = 1; // number of channels (grayscale)
+    std::vector<ImageFrame> frames; // image frames
 
     /**
      * @brief load an image or GIF from the given path
