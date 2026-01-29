@@ -197,7 +197,7 @@ int main(int argc, char *argv[]) {
     clog << "Generating audio: " << totalSamples << " samples at " << params.samplerate << " Hz" << endl;
     clog << "This may take a while depending on image/gif size and number of frames..." << endl;
 
-    const int LUT_SIZE = lookupTableSize; // Size of the gamma lookup table TODO: Make adjustable with command line arg
+    const int LUT_SIZE = lookupTableSize; // Size of the gamma lookup table
     static vector<float> gammaLUT; // Gamma lookup table
     static float lastGamma = -1.0f; // Last used gamma value (to check if we need to recalculate LUT)
 
