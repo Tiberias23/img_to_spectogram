@@ -76,6 +76,7 @@ int main(int argc, char *argv[]) {
             ("duration-per-column", "Duration per image column in seconds", cxxopts::value<float>()->default_value("0.01"))
             ("scale", "The scale type (linear | logarithmic | mel | bark)", cxxopts::value<std::string>()->default_value("logarithmic"))
             ("gamma", "Gamma correction", cxxopts::value<float>()->default_value("1.0"))
+            ("gama-size,gama-look-up-table-size", "Size of the gamma look-up table (only for linear scale)", cxxopts::value<int>()->default_value("4096"))
             ("norm", "Normalization: peak|rms", cxxopts::value<std::string>()->default_value("peak"))
             ("stereo", "Enable stereo output (default is mono)");
 
@@ -163,6 +164,11 @@ int main(int argc, char *argv[]) {
     // Samples per column
     int samplesPerColumn = static_cast<int>(static_cast<float>(params.samplerate) * params.durationPerColumn);
 
+    int lookupTableSize = parsed["gama-look-up-table-size"].as<int>(); // Size of the gamma look-up table
+    if (lookupTableSize <= 0) {
+        throw std::runtime_error("Gamma look-up table size must be positive");
+    }
+
     // --- Audio bauen ---
     int totalSamples = 0; // Total sample count
     vector<int> frameOffsets; // Offset for each frame in the final audio
@@ -191,7 +197,7 @@ int main(int argc, char *argv[]) {
     clog << "Generating audio: " << totalSamples << " samples at " << params.samplerate << " Hz" << endl;
     clog << "This may take a while depending on image/gif size and number of frames..." << endl;
 
-    constexpr int LUT_SIZE = 4096; // Size of the gamma lookup table TODO: Make adjustable with command line arg
+    const int LUT_SIZE = lookupTableSize; // Size of the gamma lookup table TODO: Make adjustable with command line arg
     static vector<float> gammaLUT; // Gamma lookup table
     static float lastGamma = -1.0f; // Last used gamma value (to check if we need to recalculate LUT)
 
@@ -199,7 +205,7 @@ int main(int argc, char *argv[]) {
     if (gammaLUT.empty() || lastGamma != params.gamma) {
         gammaLUT.resize(LUT_SIZE); // Resize LUT
         for (int i = 0; i < LUT_SIZE; ++i) { // Fill LUT
-            float v = static_cast<float>(i) / (LUT_SIZE - 1); // Normalized value [0,1]
+            float v = static_cast<float>(i) / static_cast<float>(LUT_SIZE - 1); // Normalized value [0,1]
             gammaLUT[i] = std::pow(v, params.gamma);      // Apply gamma correction
         }
         lastGamma = params.gamma; // Update last gamma
@@ -240,7 +246,7 @@ int main(int argc, char *argv[]) {
 
         // multithread the calculation with OpenMP
 #pragma omp parallel default(none) shared(finalAudio, finalAudioL, finalAudioR, frame, frequencies, hann, offset,\
-    colSamples, params, phaseInc, useStereo, img, useWindow, sinInc, cosInc, gammaLUT)
+    colSamples, params, phaseInc, useStereo, img, useWindow, sinInc, cosInc, gammaLUT, LUT_SIZE)
         {
             vector<float> amp(frame.height);    // Amplitudes for each row
             vector<float> sine_values(frame.height);   // Sine values for each row
@@ -273,7 +279,7 @@ int main(int argc, char *argv[]) {
                         c -= 0.5f; // Center around 0
                         float sign = (c >= 0.0f) ? 1.0f : -1.0f; // Sign of c
                         float ac = std::abs(c); // Absolute value of c
-                        int li = std::min(static_cast<int>(ac * (LUT_SIZE - 1)), LUT_SIZE - 1); // Lookup index
+                        int li = std::min(static_cast<int>(ac * static_cast<float>(LUT_SIZE - 1)), LUT_SIZE - 1); // Lookup index
                         amp[y] = sign * gammaLUT[li]; // Apply gamma correction using LUT
                     } else {
                         // LOG / MEL / BARK für JPGs
