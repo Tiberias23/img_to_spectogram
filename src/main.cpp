@@ -6,75 +6,75 @@
 #include <numeric>
 #include <random>
 
-// Bibliotheken einbinden
+// Include library's
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include <AudioFile.h> // TODO: evtl. selber schreiben, da die lib viel bietet aber wir nur wav speichern brauchen
 #include <cxxopts.hpp>
 
-// Für meine eigenen sachen
-#include <structs.hpp> // für Image, ImageFrame, AudioParams, NormType und StereoNorm
-#include <ungrouped_utility_funktions.hpp> // für freqForY, convert_file, ffmpegExists, convertWithFFmpeg, hzToMel, melToHz, hzToBark, barkToHz
+// Include the stuff form the other files
+#include <structs.hpp> // for Image, ImageFrame, AudioParams, NormType und StereoNorm
+#include <ungrouped_utility_funktions.hpp> // for freqForY, convert_file, ffmpegExists, convertWithFFmpeg, hzToMel, melToHz, hzToBark, barkToHz
 using namespace std;
 
 
 /**
- * @brief Speichert das Audio als WAV-Datei
- * @param useStereo ob Stereo verwendet wird
- * @param outputSoundPath der Pfad zur Ausgabedatei
- * @param finalAudio das finale Audio (Mono)
- * @param finalAudioL das finale Audio links (Stereo)
- * @param finalAudioR das finale Audio rechts (Stereo)
- * @param samplerate die rate der samples
- * @return true bei Erfolg, false bei Fehler
+ * @brief Save WAV file
+ * @param useStereo whether to use stereo or mono
+ * @param outputSoundPath the output path
+ * @param finalAudio the finale Audio (Mono)
+ * @param finalAudioL the finale Audio left (Stereo)
+ * @param finalAudioR the finale Audio right (Stereo)
+ * @param samplerate the samplerate
+ * @return true on success, false on failure
  * @author Lupo
  */
 [[nodiscard]] inline bool save_wav_file(const bool useStereo, const std::string &outputSoundPath,
     const std::vector<float> &finalAudio, const std::vector<float> &finalAudioL, const std::vector<float> &finalAudioR, const int samplerate) {
     try {
-        // --- WAV speichern ---
-        AudioFile<float> wav;
-        wav.setSampleRate(samplerate);
+        // --- Save WAV ---
+        AudioFile<float> wav; // AudioFile object
+        wav.setSampleRate(samplerate); // Set sample rate
         if (useStereo) {
-            wav.setNumChannels(2);
-            wav.setNumSamplesPerChannel(static_cast<int>(finalAudioL.size()));
-            for (size_t i = 0; i < finalAudioL.size(); ++i) {
+            wav.setNumChannels(2); // Stereo
+            wav.setNumSamplesPerChannel(static_cast<int>(finalAudioL.size())); // Set number of samples
+            for (size_t i = 0; i < finalAudioL.size(); ++i) { // Write samples to both channels
                 wav.samples[0][i] = finalAudioL[i];
                 wav.samples[1][i] = finalAudioR[i];
             }
         } else {
-            wav.setNumChannels(1);
-            wav.setNumSamplesPerChannel(static_cast<int>(finalAudio.size()));
-            for (size_t i = 0; i < finalAudio.size(); ++i)
+            wav.setNumChannels(1); // Mono
+            wav.setNumSamplesPerChannel(static_cast<int>(finalAudio.size())); // Set number of samples
+            for (size_t i = 0; i < finalAudio.size(); ++i) // Write samples to mono channel
                 wav.samples[0][i] = finalAudio[i];
         }
 
-        if (!wav.save(outputSoundPath, AudioFileFormat::Wave)) {
-            throw std::runtime_error("Failed to save file");
+        if (!wav.save(outputSoundPath, AudioFileFormat::Wave)) { // Save WAV file
+            throw std::runtime_error("Failed to save file"); // Throw error on failure
         }
         std::cout << "Audio saved to " << outputSoundPath << std::endl;
         return true;
     } catch (std::exception &e) {
-        std::cerr << "Error saving WAV file: " << e.what() << std::endl;
-        return false;
+        std::cerr << "Error saving WAV file: " << e.what() << std::endl; // Print error message
+        return false; // Return false on failure
     }
 }
 
 
 // --- Main ---
 int main(int argc, char *argv[]) {
-    cxxopts::Options options("ImageToSound", "Convert image to sound");
+    cxxopts::Options options("ImageToSound", "Convert image to sound"); // Command line options
     options.add_options("General options")
             ("h,help", "Print help")
-            ("i,input", "Input image path", cxxopts::value<std::string>()->default_value("Silly_Cat_Character.jpg"))
-            ("o,output", "Output sound path", cxxopts::value<std::string>()->default_value(""));
+            ("i,input", "Input image path default: ./Silly_Cat_Character.jpg", cxxopts::value<std::string>()->default_value("Silly_Cat_Character.jpg"))
+            ("o,output", "Output sound path default ./INPUT_FILENAME.wav", cxxopts::value<std::string>()->default_value(""));
 
     options.add_options("Audio options")
-            ("min-freq", "Minimum frequency", cxxopts::value<float>()->default_value("400.0"))
-            ("max-freq", "Maximum frequency", cxxopts::value<float>()->default_value("14000.0"))
+            ("min-freq", "Minimum frequency default 400.0", cxxopts::value<float>()->default_value("400.0"))
+            ("max-freq", "Maximum frequency default 14000.0", cxxopts::value<float>()->default_value("14000.0"))
             ("samplerate", "Sample rate", cxxopts::value<int>()->default_value("44100"))
             ("duration-per-column", "Duration per image column in seconds", cxxopts::value<float>()->default_value("0.01"))
-            ("scale", "The scale type", cxxopts::value<std::string>()->default_value("logarithmic"))
+            ("scale", "The scale type (linear | logarithmic | mel | bark)", cxxopts::value<std::string>()->default_value("logarithmic"))
             ("gamma", "Gamma correction", cxxopts::value<float>()->default_value("1.0"))
             ("norm", "Normalization: peak|rms", cxxopts::value<std::string>()->default_value("peak"))
             ("stereo", "Enable stereo output (default is mono)");
@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
              cxxopts::value<std::string>()->default_value("wav"))
             ("keep-wav", "Keep intermediate WAV file when converting to another format");
 
-    const cxxopts::ParseResult parsed = options.parse(argc, argv);
+    const cxxopts::ParseResult parsed = options.parse(argc, argv); // Parsed arguments
     if (parsed.count("help")) {
         std::cout << options.help() << std::endl;
         std::cout << "When using -f to convert to another format, "
@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    // konvert string to lower
+    // konvert a string to its lowercase representation
     auto toLower = [](std::string s) -> std::string {
         ranges::transform(s, s.begin(), ::tolower);
         return s;
@@ -111,78 +111,76 @@ int main(int argc, char *argv[]) {
     }
 
     // Pfade vorbereiten
-    const std::string outputFormat = toLower(parsed["format"].as<std::string>()); // z.B. "mp3", "flac", "wav"
-    std::filesystem::path wavPath(outputSoundPath);
-    std::filesystem::path finalOutputPath = wavPath; // default WAV
+    const std::string outputFormat = toLower(parsed["format"].as<std::string>()); // the output format e.g. "mp3", "flac", "wav"
+    std::filesystem::path wavPath(outputSoundPath); // Path to wav file (temporary if converting)
+    std::filesystem::path finalOutputPath = wavPath; // the final output path
 
-    // Falls ein anderes Format gewünscht wird, nur Dateiendung ändern
+    // if the output format is not wav, change the final output path extension accordingly
     if (outputFormat != "wav") {
         finalOutputPath.replace_extension(outputFormat);
     }
 
-    bool keepWav = parsed.count("keep-wav") > 0;
+    bool keepWav = parsed.count("keep-wav") > 0; // whether to keep the intermediate wav file
 
     // --- Image laden ---
-    Image img; // Das bild das in audio umgewandelt werden soll
+    Image img; // The image object to hold the loaded image
     if (!img.load(inputImagePath)) {
         cerr << "Failed to load image: " << inputImagePath << endl;
         return 1;
     }
 
     // --- Audio-Parameter ---
-    AudioParams params; // Die audioparameter für die sound erstellung
-    params.samplerate = parsed["samplerate"].as<int>();
-    params.minFreq = parsed["min-freq"].as<float>();
-    params.maxFreq = parsed["max-freq"].as<float>();
-    params.durationPerColumn = parsed["duration-per-column"].as<float>();
-    params.gamma = parsed["gamma"].as<float>();
+    AudioParams params; // The audio parameters
+    params.samplerate = parsed["samplerate"].as<int>(); // Sample rate
+    params.minFreq = parsed["min-freq"].as<float>();    // Minimum frequency
+    params.maxFreq = parsed["max-freq"].as<float>();    // Maximum frequency
+    params.durationPerColumn = parsed["duration-per-column"].as<float>(); // Duration per image column
+    params.gamma = parsed["gamma"].as<float>();         // Gamma correction
 
-    // ReSharper disable once CppTooWideScopeInitStatement
-    const std::string scaleStr = toLower(parsed["scale"].as<std::string>());
-    if (scaleStr == "linear") {
-        params.scaleType = AudioParams::ScaleType::LINEAR;
+    const std::string scaleStr = toLower(parsed["scale"].as<std::string>()); // User input string for scale type
+    if (scaleStr == "linear" || scaleStr == "lin") {
+        params.scaleType = AudioParams::ScaleType::LINEAR;      // Linear scale
     } else if (scaleStr == "logarithmic" || scaleStr == "log") {
-        params.scaleType = AudioParams::ScaleType::LOGARITHMIC;
+        params.scaleType = AudioParams::ScaleType::LOGARITHMIC; // Logarithmic scale
     } else if (scaleStr == "mel") {
-        params.scaleType = AudioParams::ScaleType::MEL;
+        params.scaleType = AudioParams::ScaleType::MEL;         // Mel scale
     } else if (scaleStr == "bark") {
-        params.scaleType = AudioParams::ScaleType::BARK;
+        params.scaleType = AudioParams::ScaleType::BARK;        // Bark scale
     } else {
-        throw std::runtime_error("Invalid scale type: " + scaleStr + " (use linear|log|mel|bark)");
+        throw std::runtime_error("Invalid scale type: " + scaleStr + " (use linear|logarithmic|mel|bark)"); // Invalid scale type throw error
     }
 
     std::string normStr = toLower(parsed["norm"].as<std::string>()); // User input string for normalization
-    enum class NormType { PEAK, RMS } norm; // Normalization type to use
-
-    if (normStr == "peak") {
+    enum class NormType { PEAK, RMS } norm; // Normalization type to use Normalisieren, falls maxAmp > 0
+    if (normStr == "peak") { // Peak normalization
         norm = NormType::PEAK;
-    } else if (normStr == "rms") {
+    } else if (normStr == "rms") { // RMS normalization
         norm = NormType::RMS;
     } else {
-        throw std::runtime_error("Invalid normalization type: " + normStr + " (use peak|rms)");
+        throw std::runtime_error("Invalid normalization type: " + normStr + " (use peak|rms)"); // Invalid normalization type throw error
     }
 
-
-    // Samples pro Spalte
+    // Samples per column
     int samplesPerColumn = static_cast<int>(static_cast<float>(params.samplerate) * params.durationPerColumn);
 
     // --- Audio bauen ---
-    int totalSamples = 0; // Gesamtanzahl der Samples
-    vector<int> frameOffsets; // Offset für jeden Frame im finalen Audio
-    frameOffsets.reserve(img.frames.size()); // Speicher reservieren für Frame-Offsets
+    int totalSamples = 0; // Total sample count
+    vector<int> frameOffsets; // Offset for each frame in the final audio
+    frameOffsets.reserve(img.frames.size()); // Reserve space for frame offsets
     for (auto &frame: img.frames) {
-        // Jede Spalte bekommt mindestens 256 Samples für scharfes Spektrogramm
+        // Every column gets at least 256 samples for a sharp spectrogram
         int colSamples = max(256, samplesPerColumn);
-        frameOffsets.push_back(totalSamples);            // Offset für diesen Frame
-        totalSamples += frame.width * colSamples;        // Samples für diesen Frame hinzufügen
+        frameOffsets.push_back(totalSamples);            // Offset for this frame
+        totalSamples += frame.width * colSamples;        // add samples for this frame
     }
 
     // Reserve finalAudio
-    bool useStereo = parsed.count("stereo") > 0; // Ob Stereo verwendet werden soll oder Mono
+    bool useStereo = parsed.count("stereo") > 0; // Whether to use stereo output or mono output
 
-    vector<float> finalAudio;               // Für Mono
-    vector<float> finalAudioL, finalAudioR; // Für Stereo
+    vector<float> finalAudio;               // For Mono
+    vector<float> finalAudioL, finalAudioR; // For Stereo
 
+    // Reserve space according to stereo/mono
     if (useStereo) {
         finalAudioL.resize(totalSamples, 0.0f);
         finalAudioR.resize(totalSamples, 0.0f);
@@ -193,67 +191,68 @@ int main(int argc, char *argv[]) {
     clog << "Generating audio: " << totalSamples << " samples at " << params.samplerate << " Hz" << endl;
     clog << "This may take a while depending on image/gif size and number of frames..." << endl;
 
-    constexpr int LUT_SIZE = 4096;
-    static vector<float> gammaLUT;
-    static float lastGamma = -1.0f;
+    constexpr int LUT_SIZE = 4096; // Size of the gamma lookup table TODO: Make adjustable with command line arg
+    static vector<float> gammaLUT; // Gamma lookup table
+    static float lastGamma = -1.0f; // Last used gamma value (to check if we need to recalculate LUT)
 
+    // Gamma-LUT vorberechnen (für LINEAR Skalierung)
     if (gammaLUT.empty() || lastGamma != params.gamma) {
-        gammaLUT.resize(LUT_SIZE);
-        for (int i = 0; i < LUT_SIZE; ++i) {
-            float v = static_cast<float>(i) / (LUT_SIZE - 1);
-            gammaLUT[i] = std::pow(v, params.gamma);
+        gammaLUT.resize(LUT_SIZE); // Resize LUT
+        for (int i = 0; i < LUT_SIZE; ++i) { // Fill LUT
+            float v = static_cast<float>(i) / (LUT_SIZE - 1); // Normalized value [0,1]
+            gammaLUT[i] = std::pow(v, params.gamma);      // Apply gamma correction
         }
-        lastGamma = params.gamma;
+        lastGamma = params.gamma; // Update last gamma
     }
 
 
-    // TODO: Mach den scheiß schneller
     // TODO: eventuell was gegen diesen mini teil bei jedem frame links unten machen
-    // Jeden Frame durchgehen
+    // Go through each frame
     for (size_t f = 0; f < img.frames.size(); ++f) {
-        auto &frame = img.frames[f];            // aktueller Frame
-        int offset = frameOffsets[f];           // Frequenzen und Phaseninkremente für jede Zeile vorberechnen
-        vector<float> frequencies(frame.height);// Frequenzen für jede Zeile
-        vector<float> phaseInc(frame.height);   // Phaseninkrement pro Sample für jede Zeile
+        auto &frame = img.frames[f];            // Current frame
+        int offset = frameOffsets[f];           // Offset in final audio for this frame
+        vector<float> frequencies(frame.height);// Frequencies for each row
+        vector<float> phaseInc(frame.height);   // Phase increments for each row
 
-        // Frequenzen und Phaseninkremente berechnen
+        // Calculate frequencies and phase increments for each row
         for (int y = 0; y < frame.height; ++y) {
-            frequencies[y] = freqForY(y, frame.height, params); // Frequenz für diese Zeile
-            phaseInc[y] = M_PI * 2.0f * frequencies[y] / params.samplerate; // Phaseninkrement pro Sample
+            frequencies[y] = freqForY(y, frame.height, params); // Frequency for this row
+            phaseInc[y] = M_PI * 2.0f * frequencies[y] / params.samplerate; // Phase increment for this row
         }
 
-        vector<float> sinInc(frame.height);
-        vector<float> cosInc(frame.height);
-        for (int y = 0; y < frame.height; ++y) {
-            sinInc[y] = sinf(phaseInc[y]);
-            cosInc[y] = cosf(phaseInc[y]);
+        vector<float> sinInc(frame.height); // Sine of phase increments
+        vector<float> cosInc(frame.height); // Cosine of phase increments
+        for (int y = 0; y < frame.height; ++y) { // Precompute sine and cosine of phase increments
+            sinInc[y] = sinf(phaseInc[y]);  // Sine of phase increment
+            cosInc[y] = cosf(phaseInc[y]);  // Cosine of phase increment
         }
 
-        // Jede Spalte bekommt mindestens 256 Samples für scharfes Spektrogramm
+        // Samples per column (at leste 256 for a sharp spectrogram)
         int colSamples = max(256, samplesPerColumn);
 
-        // Hann-Window vorberechnen (reduziert Spectral Leakage)
-        vector<float> hann(colSamples);
-        for (int i = 0; i < colSamples; ++i) {
-            hann[i] = 0.5f * static_cast<float>(1.0f - cos(2.0f * M_PI * i / (colSamples - 1)));
+        vector<float> hann(colSamples);         // Hann window
+        for (int i = 0; i < colSamples; ++i) {  // Precalculate Hann window for this column
+            hann[i] = 0.5f * static_cast<float>(1.0f - cos(2.0f * M_PI * i / (colSamples - 1))); // Hann window formula
         }
 
-        const bool useWindow = img.frames.size() > 1; // Check ob Windowing verwendet werden soll (bei GIFs ja, bei Einzelbildern nein)
+        // Check whether to use Windowing (for GIFs yes, for single image's no)
+        const bool useWindow = img.frames.size() > 1;
 
-        // Spalten parallel berechnen
-#pragma omp parallel default(none) \
-        shared(finalAudio, finalAudioL, finalAudioR, frame, frequencies, hann, offset, colSamples, params, phaseInc, useStereo, img, useWindow, sinInc, cosInc, gammaLUT)
-        // ReSharper disable once CppDFAUnreadVariable
+        // multithread the calculation with OpenMP
+#pragma omp parallel default(none) shared(finalAudio, finalAudioL, finalAudioR, frame, frequencies, hann, offset,\
+    colSamples, params, phaseInc, useStereo, img, useWindow, sinInc, cosInc, gammaLUT)
         {
-            vector<float> amp(frame.height);
-            vector<float> sinv(frame.height);
-            vector<float> cosv(frame.height);
+            vector<float> amp(frame.height);    // Amplitudes for each row
+            vector<float> sine_values(frame.height);   // Sine values for each row
+            vector<float> cosine_values(frame.height);   // Cosine values for each row
 
-            // Jede Spalte durchgehen
+            // Go through each column
             #pragma omp for schedule(static, 16)
             for (int x = 0; x < frame.width; ++x) {
-                // Panning berechnen
-                float pan;
+                // Calculate panning
+                float pan; // Panning value [-1.0 (left) to 1.0 (right)]
+
+                // Linear panning based on column position
                 if ((frame.width > 1))
                     pan = 2.0f * (static_cast<float>(x) / static_cast<float>(frame.width - 1)) - 1.0f;
                 else
@@ -262,48 +261,48 @@ int main(int argc, char *argv[]) {
                 // Equal Power Panning
                 float panL = 1.0f, panR = 1.0f; // Default für Mono
                 if (useStereo) {
-                    panL = std::sqrt(0.5f * (1.0f - pan));
-                    panR = std::sqrt(0.5f * (1.0f + pan));
+                    panL = std::sqrt(0.5f * (1.0f - pan)); // Left channel
+                    panR = std::sqrt(0.5f * (1.0f + pan)); // Right channel
                 }
 
-                // Amplituden und Startphasen für jede Zeile berechnen
+                // Calculate amplitudes for each row based on pixel values
                 for (int y = 0; y < frame.height; ++y) {
-                    float c = frame.pixels[y * frame.width + x]; // Pixelwert an (x,y)
-                    if (params.scaleType == AudioParams::ScaleType::LINEAR || img.frames.size() > 1 /* GIF erkennen: mehrere Frames*/) {
-                        // alte Sign-Pow Logik für LINEAR und GIFs
-                        c -= 0.5f;
-                        float sign = (c >= 0.0f) ? 1.0f : -1.0f;
-                        float ac = std::abs(c);
-                        int li = std::min(static_cast<int>(ac * (LUT_SIZE - 1)), LUT_SIZE - 1);
-                        amp[y] = sign * gammaLUT[li];
+                    float c = frame.pixels[y * frame.width + x]; // Pixel value at (x,y)
+                    if (params.scaleType == AudioParams::ScaleType::LINEAR || img.frames.size() > 1 /* Recognise GIF */) {
+                        // old Sign-Pow Logic for LINEAR and GIFs
+                        c -= 0.5f; // Center around 0
+                        float sign = (c >= 0.0f) ? 1.0f : -1.0f; // Sign of c
+                        float ac = std::abs(c); // Absolute value of c
+                        int li = std::min(static_cast<int>(ac * (LUT_SIZE - 1)), LUT_SIZE - 1); // Lookup index
+                        amp[y] = sign * gammaLUT[li]; // Apply gamma correction using LUT
                     } else {
                         // LOG / MEL / BARK für JPGs
-                        c = std::max(c, 1e-4f);
-                        amp[y] = std::pow(c, params.gamma);
+                        c = std::max(c, 1e-4f); // Avoid log(0)
+                        amp[y] = std::pow(c, params.gamma); // Apply gamma correction
                     }
 
-                    float startPhase = phaseInc[y] * static_cast<float>(x) * static_cast<float>(colSamples);
-                    sinv[y] = sinf(startPhase);
-                    cosv[y] = cosf(startPhase);
-
+                    float startPhase = phaseInc[y] * static_cast<float>(x) * static_cast<float>(colSamples); // Start phase for this column
+                    sine_values[y] = sinf(startPhase); // Initial sine value
+                    cosine_values[y] = cosf(startPhase); // Initial cosine value
                 }
 
 
-                // Samples für diese Spalte generieren
-                const int colSamplesFrame = colSamples; // Fix für diese Schleife
+                // Generate samples for this column
+                const int colSamplesFrame = colSamples; // Samples per column for this frame (to avoid recalculating every time)
                 for (int i = 0; i < colSamplesFrame; ++i) {
-                    float sample = 0.0f; // Sample für diese Position
-                    for (int y = 0; y < frame.height; ++y) { // Alle Zeilen addieren
-                        sample += amp[y] * sinv[y];
+                    float sample = 0.0f; // Sample for this point in time
+                    for (int y = 0; y < frame.height; ++y) { // add up all frequencies
+                        sample += amp[y] * sine_values[y]; // Add sine wave contribution
+                        // Update sine and cosine using recursive formula
 
-                        float s = sinv[y];
-                        float c = cosv[y];
-                        sinv[y] = s * cosInc[y] + c * sinInc[y];
-                        cosv[y] = c * cosInc[y] - s * sinInc[y];
+                        float s = sine_values[y]; // Current sine value
+                        float c = cosine_values[y]; // Current cosine value
+                        sine_values[y] = s * cosInc[y] + c * sinInc[y]; // Update sine
+                        cosine_values[y] = c * cosInc[y] - s * sinInc[y]; // Update cosine
                     }
-                    if (useWindow) sample *= hann[i]; // Hann-Window anwenden
+                    if (useWindow) sample *= hann[i]; // Apply windowing if needed
 
-                    int idx = offset + x * colSamples + i; // Index im finalen Audio
+                    int idx = offset + x * colSamples + i; // Index in final audio
                     if (useStereo) { // Stereo
                         finalAudioL[idx] += sample * panL;
                         finalAudioR[idx] += sample * panR;
@@ -318,9 +317,9 @@ int main(int argc, char *argv[]) {
     clog << "Audio generation completed." << endl;
     clog << "Post-processing audio..." << endl;
 
-    // --- DC entfernen ---
+    // --- Remove DC ---
 
-    // DC-Offset entfernen
+    // Remove DC-Offset
     auto removeDC = [](vector<float> &buf) -> void {
         const float mean = std::accumulate(buf.begin(), buf.end(), 0.0f) / static_cast<float>(buf.size());
         for (auto &s: buf) s -= mean;
@@ -333,30 +332,31 @@ int main(int argc, char *argv[]) {
         removeDC(finalAudio);
     }
 
-    // --- Normalisieren ---
+    // --- Normalise ---
     if (useStereo) { // Stereo
         if (norm == NormType::RMS) { // RMS
-            double sumSq = 0.0; // Summe der Quadrate
-            // beide Kanäle zusammen betrachten (wir müssen nur die größe von einem Kanal kennen, sind ja gleich groß)
+            double sumSq = 0.0; // Sum of squares
+            // Add up squares of both channels to calculate RMS
             for (size_t i = 0; i < finalAudioL.size(); ++i) {
                 sumSq += finalAudioL[i] * finalAudioL[i];
                 sumSq += finalAudioR[i] * finalAudioR[i];
             }
-            // RMS über beide Kanäle
+            // RMS over both channels
             auto rms = static_cast<float>(std::sqrt(sumSq / (2.0 * static_cast<float>(finalAudioL.size()))));
-            float gain = 0.1f / std::max(rms, 1e-6f);   // Verstärkung berechnen
-            for (size_t i = 0; i < finalAudioL.size(); ++i) { // Beide Kanäle normalisieren
+            float gain = 0.1f / std::max(rms, 1e-6f);   // Calculate gain
+            for (size_t i = 0; i < finalAudioL.size(); ++i) { // Normalize both channels
                 finalAudioL[i] *= gain;
                 finalAudioR[i] *= gain;
             }
         } else {
             // PEAK
-            float maxAmp = 0.0f; // Maximale Amplitude über beide Kanäle finden
-            for (size_t i = 0; i < finalAudioL.size(); ++i) // Beide Kanäle durchgehen und Maximum finden
+            float maxAmp = 0.0f; // Maximum amplitude
+            // Find maximum absolute amplitude across both channels
+            for (size_t i = 0; i < finalAudioL.size(); ++i) // Check both channels
                 maxAmp = std::max({maxAmp, std::abs(finalAudioL[i]), std::abs(finalAudioR[i])});
-            if (maxAmp > 0.0f) { // Normalisieren, falls maxAmp > 0
-                float inv = 1.0f / maxAmp; // Invers der maximalen Amplitude
-                for (size_t i = 0; i < finalAudioL.size(); ++i) { // Beide Kanäle normalisieren
+            if (maxAmp > 0.0f) { // Normalise if maxAmp > 0
+                float inv = 1.0f / maxAmp; // Inverse of max amplitude
+                for (size_t i = 0; i < finalAudioL.size(); ++i) { // Normalize both channels
                     finalAudioL[i] *= inv;
                     finalAudioR[i] *= inv;
                 }
@@ -366,16 +366,16 @@ int main(int argc, char *argv[]) {
         if (norm == NormType::RMS) {
             double sumSq = 0.0;
             for (float s: finalAudio) sumSq += s * s;
-            auto rms = static_cast<float>(std::sqrt(sumSq / static_cast<float>(finalAudio.size()))); // RMS berechnen
-            float gain = 0.1f / std::max(rms, 1e-6f); // Verstärkung berechnen
-            for (float &s: finalAudio) s *= gain; // Normalisieren
+            auto rms = static_cast<float>(std::sqrt(sumSq / static_cast<float>(finalAudio.size()))); // Calculate RMS
+            float gain = 0.1f / std::max(rms, 1e-6f); // Calculate gain
+            for (float &s: finalAudio) s *= gain; // Normalize
         } else {
             // PEAK
-            // Maximum der absoluten Werte finden
+            // Find maximum absolute amplitude
             float maxAmp = *ranges::max_element(finalAudio, [](const float a, const float b) -> bool {
                 return std::abs(a) < std::abs(b);
             });
-            if (maxAmp > 0.0f) { // Normalisieren, falls maxAmp > 0
+            if (maxAmp > 0.0f) { // Normalise if maxAmp > 0
                 float inv = 1.0f / maxAmp;
                 for (auto &s: finalAudio) s *= inv;
             }
@@ -386,17 +386,17 @@ int main(int argc, char *argv[]) {
     clog << "Audio post-processing completed." << endl;
     clog << "Saving audio to file..." << endl;
 
-    // --- WAV speichern ---
-    // WAV speichern
+    // --- Save WAV ---
+    // Save WAV
     if (!save_wav_file(useStereo, wavPath.string(), finalAudio, finalAudioL, finalAudioR, params.samplerate)) {
         cerr << "Could not save WAV file to " << wavPath.string() << endl;
         return 1;
     }
     clog << "WAV file saved successfully." << endl;
 
-    // --- Falls gewünscht, in anderes Format konvertieren ---
+    // --- If needed convert to other format with Ffmpeg ---
     if (outputFormat != "wav") {
-        if (!convert_file(outputFormat, wavPath.string(), keepWav, finalOutputPath)) { // Konvertieren
+        if (!convert_file(outputFormat, wavPath.string(), keepWav, finalOutputPath)) { // Convert file
             cerr << "Could not convert file " << wavPath.string() << endl;
             cerr << "Wav file is kept." << endl;
             return 1;
