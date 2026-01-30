@@ -4,7 +4,6 @@
 #include <string>
 #include <algorithm>
 #include <numeric>
-#include <random>
 
 // Include library's
 #define STB_IMAGE_IMPLEMENTATION
