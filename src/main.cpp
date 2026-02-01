@@ -32,8 +32,8 @@ using namespace std;
     const std::vector<float> &finalAudio, const std::vector<float> &finalAudioL, const std::vector<float> &finalAudioR, const int samplerate) {
     try {
         // --- Save WAV ---
-        AudioFile<float> wav; // AudioFile object
-        wav.setSampleRate(samplerate); // Set sample rate
+        AudioFile<float> wav;           // AudioFile object
+        wav.setSampleRate(samplerate);  // Set sample rate
         if (useStereo) {
             wav.setNumChannels(2); // Stereo
             wav.setNumSamplesPerChannel(static_cast<int>(finalAudioL.size())); // Set number of samples
@@ -49,7 +49,7 @@ using namespace std;
         }
 
         if (!wav.save(outputSoundPath, AudioFileFormat::Wave)) { // Save WAV file
-            throw std::runtime_error("Failed to save file"); // Throw error on failure
+            throw std::runtime_error("Failed to save file");     // Throw error on failure
         }
         std::cout << "Audio saved to " << outputSoundPath << std::endl;
         return true;
@@ -112,8 +112,8 @@ int main(int argc, char *argv[]) {
 
     // Pfade vorbereiten
     const std::string outputFormat = toLower(parsed["format"].as<std::string>()); // the output format e.g. "mp3", "flac", "wav"
-    std::filesystem::path wavPath(outputSoundPath); // Path to wav file (temporary if converting)
-    std::filesystem::path finalOutputPath = wavPath; // the final output path
+    std::filesystem::path wavPath(outputSoundPath);     // Path to wav file (temporary if converting)
+    std::filesystem::path finalOutputPath = wavPath;    // the final output path
 
     // if the output format is not wav, change the final output path extension accordingly
     if (outputFormat != "wav") {
@@ -152,9 +152,9 @@ int main(int argc, char *argv[]) {
 
     std::string normStr = toLower(parsed["norm"].as<std::string>()); // User input string for normalization
     enum class NormType { PEAK, RMS } norm; // Normalization type to use Normalisieren, falls maxAmp > 0
-    if (normStr == "peak") { // Peak normalization
+    if (normStr == "peak") {        // Peak normalization
         norm = NormType::PEAK;
-    } else if (normStr == "rms") { // RMS normalization
+    } else if (normStr == "rms") {  // RMS normalization
         norm = NormType::RMS;
     } else {
         throw std::runtime_error("Invalid normalization type: " + normStr + " (use peak|rms)"); // Invalid normalization type throw error
@@ -169,7 +169,7 @@ int main(int argc, char *argv[]) {
     }
 
     // --- Audio bauen ---
-    int totalSamples = 0; // Total sample count
+    int totalSamples = 0;     // Total sample count
     vector<int> frameOffsets; // Offset for each frame in the final audio
     frameOffsets.reserve(img.frames.size()); // Reserve space for frame offsets
     for (auto &frame: img.frames) {
@@ -196,9 +196,9 @@ int main(int argc, char *argv[]) {
     clog << "Generating audio: " << totalSamples << " samples at " << params.samplerate << " Hz" << endl;
     clog << "This may take a while depending on image/gif size and number of frames..." << endl;
 
-    const int LUT_SIZE = lookupTableSize; // Size of the gamma lookup table
-    static vector<float> gammaLUT; // Gamma lookup table
-    static float lastGamma = -1.0f; // Last used gamma value (to check if we need to recalculate LUT)
+    const int LUT_SIZE = lookupTableSize;   // Size of the gamma lookup table
+    static vector<float> gammaLUT;          // Gamma lookup table
+    static float lastGamma = -1.0f;         // Last used gamma value (to check if we need to recalculate LUT)
 
     // Gamma-LUT vorberechnen (für LINEAR Skalierung)
     if (gammaLUT.empty() || lastGamma != params.gamma) {
@@ -221,15 +221,15 @@ int main(int argc, char *argv[]) {
 
         // Calculate frequencies and phase increments for each row
         for (int y = 0; y < frame.height; ++y) {
-            frequencies[y] = freqForY(y, frame.height, params); // Frequency for this row
+            frequencies[y] = freqForY(y, frame.height, params);             // Frequency for this row
             phaseInc[y] = M_PI * 2.0f * frequencies[y] / params.samplerate; // Phase increment for this row
         }
 
-        vector<float> sinInc(frame.height); // Sine of phase increments
-        vector<float> cosInc(frame.height); // Cosine of phase increments
-        for (int y = 0; y < frame.height; ++y) { // Precompute sine and cosine of phase increments
-            sinInc[y] = sinf(phaseInc[y]);  // Sine of phase increment
-            cosInc[y] = cosf(phaseInc[y]);  // Cosine of phase increment
+        vector<float> sinInc(frame.height);         // Sine of phase increments
+        vector<float> cosInc(frame.height);         // Cosine of phase increments
+        for (int y = 0; y < frame.height; ++y) {    // Precompute sine and cosine of phase increments
+            sinInc[y] = sinf(phaseInc[y]);          // Sine of phase increment
+            cosInc[y] = cosf(phaseInc[y]);          // Cosine of phase increment
         }
 
         // Samples per column (at leste 256 for a sharp spectrogram)
@@ -247,9 +247,9 @@ int main(int argc, char *argv[]) {
 #pragma omp parallel default(none) shared(finalAudio, finalAudioL, finalAudioR, frame, frequencies, hann, offset,\
     colSamples, params, phaseInc, useStereo, img, useWindow, sinInc, cosInc, gammaLUT, LUT_SIZE)
         {
-            vector<float> amp(frame.height);    // Amplitudes for each row
-            vector<float> sine_values(frame.height);   // Sine values for each row
-            vector<float> cosine_values(frame.height);   // Cosine values for each row
+            vector<float> amp(frame.height);                // Amplitudes for each row
+            vector<float> sine_values(frame.height);        // Sine values for each row
+            vector<float> cosine_values(frame.height);      // Cosine values for each row
 
             // Go through each column
             #pragma omp for schedule(static, 16)
@@ -276,34 +276,34 @@ int main(int argc, char *argv[]) {
                     if (params.scaleType == AudioParams::ScaleType::LINEAR || img.frames.size() > 1 /* Recognise GIF */) {
                         // old Sign-Pow Logic for LINEAR and GIFs
                         c -= 0.5f; // Center around 0
-                        float sign = (c >= 0.0f) ? 1.0f : -1.0f; // Sign of c
-                        float ac = std::abs(c); // Absolute value of c
+                        float sign = (c >= 0.0f) ? 1.0f : -1.0f;    // Sign of c
+                        float ac = std::abs(c);                     // Absolute value of c
                         int li = std::min(static_cast<int>(ac * static_cast<float>(LUT_SIZE - 1)), LUT_SIZE - 1); // Lookup index
                         amp[y] = sign * gammaLUT[li]; // Apply gamma correction using LUT
                     } else {
                         // LOG / MEL / BARK für JPGs
-                        c = std::max(c, 1e-4f); // Avoid log(0)
+                        c = std::max(c, 1e-4f);             // Avoid log(0)
                         amp[y] = std::pow(c, params.gamma); // Apply gamma correction
                     }
 
                     float startPhase = phaseInc[y] * static_cast<float>(x) * static_cast<float>(colSamples); // Start phase for this column
-                    sine_values[y] = sinf(startPhase); // Initial sine value
-                    cosine_values[y] = cosf(startPhase); // Initial cosine value
+                    sine_values[y] = sinf(startPhase);      // Initial sine value
+                    cosine_values[y] = cosf(startPhase);    // Initial cosine value
                 }
 
 
                 // Generate samples for this column
                 const int colSamplesFrame = colSamples; // Samples per column for this frame (to avoid recalculating every time)
                 for (int i = 0; i < colSamplesFrame; ++i) {
-                    float sample = 0.0f; // Sample for this point in time
-                    for (int y = 0; y < frame.height; ++y) { // add up all frequencies
-                        sample += amp[y] * sine_values[y]; // Add sine wave contribution
-                        // Update sine and cosine using recursive formula
+                    float sample = 0.0f;                        // Sample for this point in time
+                    for (int y = 0; y < frame.height; ++y) {    // add up all frequencies
+                        sample += amp[y] * sine_values[y];      // Add sine wave contribution
 
-                        float s = sine_values[y]; // Current sine value
-                        float c = cosine_values[y]; // Current cosine value
-                        sine_values[y] = s * cosInc[y] + c * sinInc[y]; // Update sine
-                        cosine_values[y] = c * cosInc[y] - s * sinInc[y]; // Update cosine
+                        // Update sine and cosine using recursive formula
+                        float s = sine_values[y];                           // Current sine value
+                        float c = cosine_values[y];                         // Current cosine value
+                        sine_values[y] = s * cosInc[y] + c * sinInc[y];     // Update sine
+                        cosine_values[y] = c * cosInc[y] - s * sinInc[y];   // Update cosine
                     }
                     if (useWindow) sample *= hann[i]; // Apply windowing if needed
 
@@ -339,17 +339,19 @@ int main(int argc, char *argv[]) {
 
     // --- Normalise ---
     if (useStereo) { // Stereo
-        if (norm == NormType::RMS) { // RMS
-            double sumSq = 0.0; // Sum of squares
+        if (norm == NormType::RMS) {    // RMS
+            double sumSq = 0.0;         // Sum of squares
+            
             // Add up squares of both channels to calculate RMS
             for (size_t i = 0; i < finalAudioL.size(); ++i) {
                 sumSq += finalAudioL[i] * finalAudioL[i];
                 sumSq += finalAudioR[i] * finalAudioR[i];
             }
+           
             // RMS over both channels
             auto rms = static_cast<float>(std::sqrt(sumSq / (2.0 * static_cast<float>(finalAudioL.size()))));
-            float gain = 0.1f / std::max(rms, 1e-6f);   // Calculate gain
-            for (size_t i = 0; i < finalAudioL.size(); ++i) { // Normalize both channels
+            float gain = 0.1f / std::max(rms, 1e-6f);           // Calculate gain
+            for (size_t i = 0; i < finalAudioL.size(); ++i) {   // Normalize both channels
                 finalAudioL[i] *= gain;
                 finalAudioR[i] *= gain;
             }
@@ -360,8 +362,8 @@ int main(int argc, char *argv[]) {
             for (size_t i = 0; i < finalAudioL.size(); ++i) // Check both channels
                 maxAmp = std::max({maxAmp, std::abs(finalAudioL[i]), std::abs(finalAudioR[i])});
             if (maxAmp > 0.0f) { // Normalise if maxAmp > 0
-                float inv = 1.0f / maxAmp; // Inverse of max amplitude
-                for (size_t i = 0; i < finalAudioL.size(); ++i) { // Normalize both channels
+                float inv = 1.0f / maxAmp;                          // Inverse of max amplitude
+                for (size_t i = 0; i < finalAudioL.size(); ++i) {   // Normalize both channels
                     finalAudioL[i] *= inv;
                     finalAudioR[i] *= inv;
                 }
