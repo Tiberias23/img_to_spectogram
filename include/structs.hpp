@@ -23,8 +23,8 @@ enum class NormType { PEAK, RMS };
 struct ImageFrame {
     int width{};
     int height{};
-    std::vector<float> pixels; // Normalised pixel values [0.0 - 1.0]
-    std::vector<int> delays; // only for GIFs: delay per frame in 10ms units
+    std::vector<float> pixels;  // Normalised pixel values [0.0 - 1.0]
+    std::vector<int> delays;    // only for GIFs: delay per frame in 10ms units
 };
 
 /**
@@ -32,7 +32,7 @@ struct ImageFrame {
  * @author Lupo
  */
 struct Image {
-    int channels = 1; // number of channels (grayscale)
+    int channels = 1;               // number of channels (grayscale)
     std::vector<ImageFrame> frames; // image frames
 
     /**
