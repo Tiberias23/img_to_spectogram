@@ -87,7 +87,7 @@ int main(int argc, char *argv[]) {
     const cxxopts::ParseResult parsed = options.parse(argc, argv); // Parsed arguments
     if (parsed.count("help")) {
         std::cout << options.help() << std::endl;
-        std::cout << "When using -f to convert to another format, "
+        std::cout << "Note:\n\tWhen using -f to convert to another format, "
                   << " except wav, ffmpeg must be installed and available in PATH."
                   << std::endl;
         return 0;
