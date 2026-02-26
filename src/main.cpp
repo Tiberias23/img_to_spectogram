@@ -89,7 +89,7 @@ using namespace std;
 
 // --- Main ---
 int main(int argc, char *argv[]) {
-    cxxopts::Options options("ImageToSound", "Convert image to sound"); // Command line options
+    cxxopts::Options options("img_to_spectogram", "Convert image to sound"); // Command line options
     options.add_options("General options")
             ("h,help", "Print help")
             ("i,input", "Input image path default: ./Silly_Cat_Character.jpg", cxxopts::value<std::string>()->default_value("Silly_Cat_Character.jpg"))
