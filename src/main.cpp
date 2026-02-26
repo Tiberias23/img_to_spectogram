@@ -8,7 +8,6 @@
 // Include library's
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#include <AudioFile.h> // TODO: evtl. selber schreiben, da die lib viel bietet aber wir nur wav speichern brauchen
 #include <cxxopts.hpp>
 
 // Include the stuff form the other files
@@ -31,31 +30,59 @@ using namespace std;
 [[nodiscard]] inline bool save_wav_file(const bool useStereo, const std::string &outputSoundPath,
     const std::vector<float> &finalAudio, const std::vector<float> &finalAudioL, const std::vector<float> &finalAudioR, const int samplerate) {
     try {
-        // --- Save WAV ---
-        AudioFile<float> wav;           // AudioFile object
-        wav.setSampleRate(samplerate);  // Set sample rate
-        if (useStereo) {
-            wav.setNumChannels(2); // Stereo
-            wav.setNumSamplesPerChannel(static_cast<int>(finalAudioL.size())); // Set number of samples
-            for (size_t i = 0; i < finalAudioL.size(); ++i) { // Write samples to both channels
-                wav.samples[0][i] = finalAudioL[i];
-                wav.samples[1][i] = finalAudioR[i];
+        const std::vector<float> &left  = useStereo ? finalAudioL : finalAudio;
+        const std::vector<float> &right = finalAudioR;
+        const int channels    = useStereo ? 2 : 1;
+        const int numSamples  = static_cast<int>(left.size());
+        constexpr int bitsPerSamp = 16;
+        const int blockAlign  = channels * (bitsPerSamp / 8);   // bytes per frame
+        const int byteRate    = samplerate * blockAlign;
+        const int dataSize    = numSamples * blockAlign;
+        const int chunkSize   = 36 + dataSize;
+
+        std::ofstream f(outputSoundPath, std::ios::binary);
+        if (!f) throw std::runtime_error("Could not open file for writing: " + outputSoundPath);
+
+        // RIFF Header
+        f.write("RIFF", 4);
+        f.write(reinterpret_cast<const char*>(&chunkSize),  4);
+        f.write("WAVE", 4);
+
+        // fmt chunk
+        int32_t fmtSize    = 16;
+        int16_t audioFmt   = 1;  // PCM
+        int16_t ch         = static_cast<int16_t>(channels);
+        int16_t bps        = static_cast<int16_t>(bitsPerSamp);
+        int16_t ba         = static_cast<int16_t>(blockAlign);
+        f.write("fmt ",4);
+        f.write(reinterpret_cast<const char*>(&fmtSize), 4);
+        f.write(reinterpret_cast<const char*>(&audioFmt), 2);
+        f.write(reinterpret_cast<const char*>(&ch), 2);
+        f.write(reinterpret_cast<const char*>(&samplerate),4);
+        f.write(reinterpret_cast<const char*>(&byteRate), 4);
+        f.write(reinterpret_cast<const char*>(&ba), 2);
+        f.write(reinterpret_cast<const char*>(&bps), 2);
+
+        // data chunk
+        f.write("data",                                    4);
+        f.write(reinterpret_cast<const char*>(&dataSize),  4);
+
+        // Samples: float [-1,1] → int16, stereo interleaved (L R L R ...)
+        for (int i = 0; i < numSamples; ++i) {
+            int16_t l = static_cast<int16_t>(std::clamp(left[i], -1.0f, 1.0f) * 32767.0f);
+            f.write(reinterpret_cast<const char*>(&l), 2);
+            if (useStereo) {
+                int16_t r = static_cast<int16_t>(std::clamp(right[i], -1.0f, 1.0f) * 32767.0f);
+                f.write(reinterpret_cast<const char*>(&r), 2);
             }
-        } else {
-            wav.setNumChannels(1); // Mono
-            wav.setNumSamplesPerChannel(static_cast<int>(finalAudio.size())); // Set number of samples
-            for (size_t i = 0; i < finalAudio.size(); ++i) // Write samples to mono channel
-                wav.samples[0][i] = finalAudio[i];
         }
 
-        if (!wav.save(outputSoundPath, AudioFileFormat::Wave)) { // Save WAV file
-            throw std::runtime_error("Failed to save file");     // Throw error on failure
-        }
+        if (!f.good()) throw std::runtime_error("Write error");
         std::cout << "Audio saved to " << outputSoundPath << std::endl;
         return true;
     } catch (std::exception &e) {
-        std::cerr << "Error saving WAV file: " << e.what() << std::endl; // Print error message
-        return false; // Return false on failure
+        std::cerr << "Error saving WAV file: " << e.what() << std::endl;
+        return false;
     }
 }
 
