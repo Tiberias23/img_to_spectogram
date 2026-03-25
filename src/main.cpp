@@ -49,11 +49,11 @@ using namespace std;
         f.write("WAVE", 4);
 
         // fmt chunk
-        int32_t fmtSize    = 16;
-        int16_t audioFmt   = 1;  // PCM
-        int16_t ch         = static_cast<int16_t>(channels);
-        int16_t bps        = static_cast<int16_t>(bitsPerSamp);
-        int16_t ba         = static_cast<int16_t>(blockAlign);
+        const int32_t fmtSize    = 16;
+        const int16_t audioFmt   = 1;  // PCM
+        const int16_t ch         = static_cast<int16_t>(channels);
+        const int16_t bps        = static_cast<int16_t>(bitsPerSamp);
+        const int16_t ba         = static_cast<int16_t>(blockAlign);
         f.write("fmt ",4);
         f.write(reinterpret_cast<const char*>(&fmtSize), 4);
         f.write(reinterpret_cast<const char*>(&audioFmt), 2);
